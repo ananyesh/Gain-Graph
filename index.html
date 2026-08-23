@@ -9,9 +9,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bar-h: 110px;
-      --avatar-size: 100px;
-      --avatar-col-w: 140px;
+      --bar-h: 120px;
+      --avatar-size: 105px;
+      --avatar-col-w: 125px;
       --font-size-inside: 16px;
       --font-size-val: 17px;
     }
@@ -38,7 +38,7 @@
       height: 100vh;
       display: flex;
       flex-direction: column;
-      padding: 24px 36px;
+      padding: 24px 40px;
       position: relative;
     }
 
@@ -47,8 +47,8 @@
       position: absolute;
       top: 56px;
       bottom: 24px;
-      left: var(--avatar-col-w);
-      right: 90px;
+      left: calc(40px + var(--avatar-col-w));
+      right: 120px;
       pointer-events: none;
       z-index: 1;
     }
@@ -68,7 +68,7 @@
     #scale-header {
       height: 28px;
       margin-left: var(--avatar-col-w);
-      margin-right: 90px;
+      margin-right: 80px;
       position: relative;
       margin-bottom: 8px;
       z-index: 10;
@@ -96,7 +96,7 @@
       justify-content: space-evenly;
       position: relative;
       z-index: 3;
-      gap: 6px;
+      gap: 8px;
       overflow-y: auto;
     }
 
@@ -114,7 +114,8 @@
       width: var(--avatar-col-w);
       display: flex;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-end;
+      padding-right: 14px;
       flex-shrink: 0;
     }
 
@@ -140,7 +141,7 @@
       position: relative;
       display: flex;
       align-items: center;
-      margin-right: 90px;
+      margin-right: 80px;
     }
 
     .bar-fill {
@@ -477,33 +478,33 @@
     function applyResponsiveBarSizes(count) {
       const num = Math.min(count, maxVisibleBars);
       if (num <= 2) {
-        document.documentElement.style.setProperty('--bar-h', '130px');
-        document.documentElement.style.setProperty('--avatar-size', '115px');
-        document.documentElement.style.setProperty('--avatar-col-w', '160px');
+        document.documentElement.style.setProperty('--bar-h', '125px');
+        document.documentElement.style.setProperty('--avatar-size', '105px');
+        document.documentElement.style.setProperty('--avatar-col-w', '125px');
         document.documentElement.style.setProperty('--font-size-inside', '16px');
         document.documentElement.style.setProperty('--font-size-val', '17px');
       } else if (num <= 5) {
         document.documentElement.style.setProperty('--bar-h', '85px');
         document.documentElement.style.setProperty('--avatar-size', '75px');
-        document.documentElement.style.setProperty('--avatar-col-w', '120px');
+        document.documentElement.style.setProperty('--avatar-col-w', '95px');
         document.documentElement.style.setProperty('--font-size-inside', '15px');
         document.documentElement.style.setProperty('--font-size-val', '16px');
       } else if (num <= 10) {
         document.documentElement.style.setProperty('--bar-h', '52px');
         document.documentElement.style.setProperty('--avatar-size', '46px');
-        document.documentElement.style.setProperty('--avatar-col-w', '80px');
+        document.documentElement.style.setProperty('--avatar-col-w', '62px');
         document.documentElement.style.setProperty('--font-size-inside', '13px');
         document.documentElement.style.setProperty('--font-size-val', '14px');
       } else if (num <= 15) {
         document.documentElement.style.setProperty('--bar-h', '36px');
         document.documentElement.style.setProperty('--avatar-size', '32px');
-        document.documentElement.style.setProperty('--avatar-col-w', '60px');
+        document.documentElement.style.setProperty('--avatar-col-w', '46px');
         document.documentElement.style.setProperty('--font-size-inside', '12px');
         document.documentElement.style.setProperty('--font-size-val', '13px');
       } else {
-        document.documentElement.style.setProperty('--bar-h', '26px');
+        document.documentElement.style.setProperty('--bar-h', '28px');
         document.documentElement.style.setProperty('--avatar-size', '24px');
-        document.documentElement.style.setProperty('--avatar-col-w', '50px');
+        document.documentElement.style.setProperty('--avatar-col-w', '36px');
         document.documentElement.style.setProperty('--font-size-inside', '10px');
         document.documentElement.style.setProperty('--font-size-val', '12px');
       }
@@ -714,7 +715,7 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       CHART RENDERING (DYNAMIC AXIS + SHORT BAR NAME PLACEMENT)
+       CHART RENDERING (ALIGNED PFP & PROPER LABELS)
     ════════════════════════════════════════════════════════ */
     function render() {
       const now = Date.now();
@@ -782,7 +783,7 @@
               <div class="bar-fill" style="width: ${widthPct}%; background-color: ${item.color};">
                 ${!isShort ? `<span class="bar-name-inside">${item.name}</span>` : ''}
               </div>
-              <span class="bar-value-text" style="left: calc(${widthPct}% + 10px);">
+              <span class="bar-value-text" style="left: calc(${widthPct}% + 12px);">
                 <span>${item.value.toLocaleString()}</span>
                 ${isShort ? `<span class="bar-name-outside">${item.name}</span>` : ''}
               </span>
