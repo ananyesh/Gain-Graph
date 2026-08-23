@@ -643,7 +643,6 @@
             const saturation = (max === 0) ? 0 : (max - min) / max;
             const brightness = (r * 299 + g * 587 + b * 114) / 1000;
 
-            // Prioritize vivid, saturated brand colors
             if (brightness > 25 && brightness < 235) {
               const score = saturation * 3 + (1 - Math.abs(brightness - 128) / 128);
               if (score > maxScore) {
@@ -661,11 +660,9 @@
           callback(hex);
         } catch (e) {}
       };
-      // Use wsrv.nl proxy to guarantee CORS permission on image canvas
       img.src = `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=48&h=48&fit=cover&output=png`;
     }
 
-    // Round human steps for moving X-axis ruler
     const NICE_STEPS = [
       1, 2, 5, 10, 20, 25, 50, 100, 250, 500,
       1000, 2500, 5000, 10000, 25000, 50000,
@@ -862,7 +859,7 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       DUAL-TIER POLLING ENGINE
+       EXACT REFRESH PACED ENGINE
     ════════════════════════════════════════════════════════ */
     function updateTrackerData(t, data, now) {
       if (!data) return;
@@ -903,7 +900,8 @@
     }
 
     async function backgroundSweep() {
-      if (trackers.length === 0) return;
+      // Only sweep large pools (> 25 channels)
+      if (trackers.length <= Math.min(maxVisibleBars, 25)) return;
       const now = Date.now();
 
       const unpolled = trackers.filter(t => t.currentCount === null && !t.isDead);
@@ -911,10 +909,11 @@
       if (unpolled.length > 0) {
         chunk = unpolled.slice(0, 10);
       } else {
-        const liveTrackers = trackers.filter(t => !t.isDead);
-        if (liveTrackers.length === 0) return;
-        chunk = liveTrackers.slice(bgSweepIndex, bgSweepIndex + 8);
-        bgSweepIndex = (bgSweepIndex + 8) % Math.max(1, liveTrackers.length);
+        const sorted = [...trackers].filter(t => !t.isDead).sort((a, b) => (b.targetGain || 0) - (a.targetGain || 0));
+        const backlog = sorted.slice(Math.min(maxVisibleBars, 25));
+        if (backlog.length === 0) return;
+        chunk = backlog.slice(bgSweepIndex, bgSweepIndex + 8);
+        bgSweepIndex = (bgSweepIndex + 8) % Math.max(1, backlog.length);
       }
 
       await Promise.all(chunk.map(async (t) => {
@@ -932,8 +931,13 @@
       if (pollTimerId) clearInterval(pollTimerId);
       if (bgWorkerTimerId) clearInterval(bgWorkerTimerId);
 
-      pollTimerId = setInterval(pollHotLeaders, Math.max(1, pollIntervalSec) * 1000);
-      bgWorkerTimerId = setInterval(backgroundSweep, 700);
+      const ms = Math.max(1, pollIntervalSec) * 1000;
+      pollTimerId = setInterval(pollHotLeaders, ms);
+
+      // Only schedule background worker when there is an actual backlog (> visible count)
+      if (trackers.length > Math.min(maxVisibleBars, 25)) {
+        bgWorkerTimerId = setInterval(backgroundSweep, Math.max(1500, ms));
+      }
     }
 
     /* ════════════════════════════════════════════════════════
@@ -1341,6 +1345,7 @@
         }
         openModal();
         pollHotLeaders();
+        resetPollTimer();
       }
     }
 
