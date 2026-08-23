@@ -10,6 +10,7 @@
   <style>
     :root {
       --bar-h: 120px;
+      --row-gap: 16px;
       --avatar-size: 105px;
       --avatar-col-w: 125px;
       --font-size-inside: 16px;
@@ -86,24 +87,32 @@
       color: #94a3b8;
     }
 
-    /* ── Bars Container ── */
+    /* ── Bars Container (FLIP Animated Rows) ── */
     #bars-container {
       flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-evenly;
       position: relative;
       z-index: 3;
-      gap: 8px;
       overflow: hidden;
     }
 
     .bar-row {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: var(--bar-h);
       display: flex;
       align-items: center;
-      width: 100%;
-      height: var(--bar-h);
-      position: relative;
+      transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1), height 0.3s;
+      will-change: transform;
+    }
+
+    .bar-row.overtake-pulse {
+      animation: overtakeGlow 0.8s ease-out;
+    }
+
+    @keyframes overtakeGlow {
+      0% { filter: brightness(1.4) drop-shadow(0 0 14px rgba(59, 130, 246, 0.6)); }
+      100% { filter: brightness(1) drop-shadow(0 0 0 transparent); }
     }
 
     /* Circular PFP Avatar on Left */
@@ -399,7 +408,7 @@
     <!-- Smooth Animated Vertical Grid Lines Overlay -->
     <div id="grid-overlay"></div>
 
-    <!-- Horizontal Bars List -->
+    <!-- Horizontal Bars List (Overtake Animated) -->
     <div id="bars-container"></div>
 
   </div>
@@ -438,10 +447,10 @@
             </select>
           </div>
           <div class="config-row">
-            <label>Auto-Sort Leaders (Highest Gain First)</label>
+            <label>Auto-Sort Leaders (Overtake Mode)</label>
             <select id="opt-sort-mode">
-              <option value="true" selected>Yes (Rank by Gain)</option>
-              <option value="false">No (Custom Order)</option>
+              <option value="true" selected>Yes (Animated Overtake)</option>
+              <option value="false">No (Fixed Order)</option>
             </select>
           </div>
         </div>
@@ -467,7 +476,7 @@
     let animatedTopScale = 10;
     let targetTopScale = 10;
 
-    // Trackers State: [ { id, type, query, color, name, pfp, initialCount, currentCount, targetGain, displayGain, history } ]
+    // Trackers State: [ { id, type, query, color, name, pfp, initialCount, currentCount, targetGain, displayGain, prevRank, history } ]
     let trackers = [];
     let nextId = 1;
 
@@ -478,30 +487,35 @@
       const num = Math.min(count, maxVisibleBars);
       if (num <= 2) {
         document.documentElement.style.setProperty('--bar-h', '125px');
+        document.documentElement.style.setProperty('--row-gap', '24px');
         document.documentElement.style.setProperty('--avatar-size', '105px');
         document.documentElement.style.setProperty('--avatar-col-w', '125px');
         document.documentElement.style.setProperty('--font-size-inside', '16px');
         document.documentElement.style.setProperty('--font-size-val', '17px');
       } else if (num <= 5) {
         document.documentElement.style.setProperty('--bar-h', '85px');
+        document.documentElement.style.setProperty('--row-gap', '16px');
         document.documentElement.style.setProperty('--avatar-size', '75px');
         document.documentElement.style.setProperty('--avatar-col-w', '95px');
         document.documentElement.style.setProperty('--font-size-inside', '15px');
         document.documentElement.style.setProperty('--font-size-val', '16px');
       } else if (num <= 10) {
         document.documentElement.style.setProperty('--bar-h', '52px');
+        document.documentElement.style.setProperty('--row-gap', '10px');
         document.documentElement.style.setProperty('--avatar-size', '46px');
         document.documentElement.style.setProperty('--avatar-col-w', '62px');
         document.documentElement.style.setProperty('--font-size-inside', '13px');
         document.documentElement.style.setProperty('--font-size-val', '14px');
       } else if (num <= 15) {
         document.documentElement.style.setProperty('--bar-h', '36px');
+        document.documentElement.style.setProperty('--row-gap', '8px');
         document.documentElement.style.setProperty('--avatar-size', '32px');
         document.documentElement.style.setProperty('--avatar-col-w', '46px');
         document.documentElement.style.setProperty('--font-size-inside', '12px');
         document.documentElement.style.setProperty('--font-size-val', '13px');
       } else {
         document.documentElement.style.setProperty('--bar-h', '28px');
+        document.documentElement.style.setProperty('--row-gap', '6px');
         document.documentElement.style.setProperty('--avatar-size', '24px');
         document.documentElement.style.setProperty('--avatar-col-w', '36px');
         document.documentElement.style.setProperty('--font-size-inside', '10px');
@@ -712,13 +726,13 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       60FPS CONTINUOUS ANIMATION LOOP (SMOOTH DYNAMIC X-AXIS)
+       60FPS ANIMATION & OVERTAKE SLIDE ENGINE
     ════════════════════════════════════════════════════════ */
     function animate() {
-      // 1. Smoothly interpolate X-Axis Scale (No teleporting!)
+      // 1. Smoothly interpolate X-Axis Scale
       const scaleDiff = targetTopScale - animatedTopScale;
       if (Math.abs(scaleDiff) > 0.05) {
-        animatedTopScale += scaleDiff * 0.08; // Smooth 60fps easing
+        animatedTopScale += scaleDiff * 0.08;
       } else {
         animatedTopScale = targetTopScale;
       }
@@ -745,20 +759,20 @@
         pfp: t.pfp || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%2394a3b8'/%3E%3C/svg%3E",
         color: t.color || '#3b82f6',
         displayVal: t.displayGain || 0,
-        targetVal: t.targetGain || 0
+        targetVal: t.targetGain || 0,
+        trackerObj: t
       }));
 
-      // Auto-Sort if enabled
+      // Sort by Gain for Overtake Order
       if (autoSort) {
         items.sort((a, b) => b.displayVal - a.displayVal);
       }
 
-      // Slice to max visible bars
       items = items.slice(0, maxVisibleBars);
       applyResponsiveBarSizes(items.length);
 
       const topScale = Math.max(1, animatedTopScale);
-      const tickCount = 4; // 0, 25%, 50%, 75%, 100%
+      const tickCount = 4;
 
       // 1. Render Top Scale Ticks & Vertical Gridlines smoothly
       const scaleHeader = document.getElementById('scale-header');
@@ -771,44 +785,71 @@
         const pct = ((i / tickCount) * 100).toFixed(2);
         const tickVal = Math.round((topScale / tickCount) * i);
 
-        // Scale Text at Top
         const lbl = document.createElement('div');
         lbl.className = 'scale-label';
         lbl.style.left = `${pct}%`;
         lbl.textContent = tickVal.toLocaleString();
         scaleHeader.appendChild(lbl);
 
-        // Vertical Grid Line
         const line = document.createElement('div');
         line.className = 'grid-line';
         line.style.left = `${pct}%`;
         gridOverlay.appendChild(line);
       }
 
-      // 2. Render Horizontal Bars with Smooth Width & Number Placement
+      // 2. Render and Animate Horizontal Bars with Overtake Positions
       const barsContainer = document.getElementById('bars-container');
-      barsContainer.innerHTML = items.map(item => {
+      const barH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar-h')) || 120;
+      const rowGap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--row-gap')) || 16;
+      const stepH = barH + rowGap;
+
+      // Ensure all item rows exist in DOM
+      items.forEach((item, rank) => {
+        let row = document.getElementById(`row-${item.id}`);
+        if (!row) {
+          row = document.createElement('div');
+          row.className = 'bar-row';
+          row.id = `row-${item.id}`;
+          barsContainer.appendChild(row);
+        }
+
+        // Check for Overtake Event (moved up in rank!)
+        if (item.trackerObj.prevRank !== undefined && rank < item.trackerObj.prevRank) {
+          row.classList.remove('overtake-pulse');
+          void row.offsetWidth; // trigger reflow
+          row.classList.add('overtake-pulse');
+        }
+        item.trackerObj.prevRank = rank;
+
+        // Apply smooth FLIP translateY position for overtake gliding
+        const targetY = rank * stepH;
+        row.style.transform = `translateY(${targetY}px)`;
+
         const ratio = Math.max(0, Math.min(1, item.displayVal / topScale));
         const widthPct = (ratio * 100).toFixed(2);
-        const isShort = ratio < 0.18; // If bar is under 18% width, display name outside!
+        const isShort = ratio < 0.18;
 
-        return `
-          <div class="bar-row">
-            <div class="avatar-wrap">
-              <img class="avatar-img" src="${item.pfp}" alt="pfp" />
+        row.innerHTML = `
+          <div class="avatar-wrap">
+            <img class="avatar-img" src="${item.pfp}" alt="pfp" />
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width: ${widthPct}%; background-color: ${item.color};">
+              ${!isShort ? `<span class="bar-name-inside">${item.name}</span>` : ''}
             </div>
-            <div class="bar-track">
-              <div class="bar-fill" style="width: ${widthPct}%; background-color: ${item.color};">
-                ${!isShort ? `<span class="bar-name-inside">${item.name}</span>` : ''}
-              </div>
-              <span class="bar-value-text" style="left: calc(${widthPct}% + 12px);">
-                <span>${Math.round(item.displayVal).toLocaleString()}</span>
-                ${isShort ? `<span class="bar-name-outside">${item.name}</span>` : ''}
-              </span>
-            </div>
+            <span class="bar-value-text" style="left: calc(${widthPct}% + 12px);">
+              <span>${Math.round(item.displayVal).toLocaleString()}</span>
+              ${isShort ? `<span class="bar-name-outside">${item.name}</span>` : ''}
+            </span>
           </div>
         `;
-      }).join('');
+      });
+
+      // Remove orphaned rows
+      const currentIds = new Set(items.map(i => `row-${i.id}`));
+      Array.from(barsContainer.children).forEach(child => {
+        if (!currentIds.has(child.id)) child.remove();
+      });
     }
 
     /* ════════════════════════════════════════════════════════
@@ -907,6 +948,7 @@
             currentCount: null,
             targetGain: 0,
             displayGain: 0,
+            prevRank: undefined,
             history: []
           });
         }
@@ -924,6 +966,7 @@
         t.history = t.currentCount !== null ? [{ t: Date.now(), v: t.currentCount }] : [];
         t.targetGain = 0;
         t.displayGain = 0;
+        t.prevRank = undefined;
       });
       animatedTopScale = 10;
       targetTopScale = 10;
@@ -968,6 +1011,7 @@
               currentCount: null,
               targetGain: 0,
               displayGain: 0,
+              prevRank: undefined,
               history: []
             }));
             if (d.activeInterval) activeInterval = d.activeInterval;
@@ -984,8 +1028,8 @@
 
       // Default demo entries
       trackers = [
-        { id: nextId++, type: 'roblox-game-visits', query: '189707', color: '#2563eb', name: 'Candy & Chocolate', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, history: [] },
-        { id: nextId++, type: 'youtube', query: 'UCBJycsmduvYEL83R_U4JriQ', color: '#3b82f6', name: 'Marques Brownlee', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, history: [] }
+        { id: nextId++, type: 'roblox-game-visits', query: '189707', color: '#2563eb', name: 'Candy & Chocolate', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [] },
+        { id: nextId++, type: 'youtube', query: 'UCBJycsmduvYEL83R_U4JriQ', color: '#3b82f6', name: 'Marques Brownlee', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [] }
       ];
     }
 
@@ -995,7 +1039,7 @@
     pollAll();
     setInterval(pollAll, 2000);
 
-    // Start 60FPS continuous smooth animation
+    // Start 60FPS continuous animation
     requestAnimationFrame(animate);
   </script>
 </body>
