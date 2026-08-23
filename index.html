@@ -170,7 +170,7 @@
       z-index: 2;
     }
 
-    /* Number outside the bar fill */
+    /* Number & Outside Name */
     .bar-value-text {
       position: absolute;
       top: 50%;
@@ -182,9 +182,21 @@
       z-index: 4;
       transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1);
       pointer-events: none;
+      display: inline-flex;
+      align-items: center;
     }
     body.dark-mode .bar-value-text {
       color: #f8fafc;
+    }
+
+    .bar-name-outside {
+      font-weight: 500;
+      font-size: var(--font-size-inside);
+      margin-left: 10px;
+      color: #475569;
+    }
+    body.dark-mode .bar-name-outside {
+      color: #94a3b8;
     }
 
     /* ── Floating Controls Bar (Discrete) ── */
@@ -702,7 +714,7 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       CHART RENDERING (DYNAMIC AXIS + FLEXIBLE BARS)
+       CHART RENDERING (DYNAMIC AXIS + SHORT BAR NAME PLACEMENT)
     ════════════════════════════════════════════════════════ */
     function render() {
       const now = Date.now();
@@ -759,6 +771,7 @@
       barsContainer.innerHTML = items.map(item => {
         const ratio = Math.max(0, Math.min(1, item.value / topScale));
         const widthPct = (ratio * 100).toFixed(2);
+        const isShort = ratio < 0.18; // If bar is under 18% width, display name outside!
 
         return `
           <div class="bar-row">
@@ -767,9 +780,12 @@
             </div>
             <div class="bar-track">
               <div class="bar-fill" style="width: ${widthPct}%; background-color: ${item.color};">
-                <span class="bar-name-inside">${item.name}</span>
+                ${!isShort ? `<span class="bar-name-inside">${item.name}</span>` : ''}
               </div>
-              <span class="bar-value-text" style="left: calc(${widthPct}% + 10px);">${item.value.toLocaleString()}</span>
+              <span class="bar-value-text" style="left: calc(${widthPct}% + 10px);">
+                <span>${item.value.toLocaleString()}</span>
+                ${isShort ? `<span class="bar-name-outside">${item.name}</span>` : ''}
+              </span>
             </div>
           </div>
         `;
