@@ -237,7 +237,7 @@
       border-radius: 20px;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
       z-index: 99999;
-      opacity: 0.2;
+      opacity: 0.25;
       transition: opacity 0.2s, background 0.2s;
     }
     #floating-bar:hover {
@@ -340,8 +340,10 @@
     }
 
     .config-row select,
-    .config-row input[type="number"] {
-      padding: 4px 8px;
+    .config-row input[type="number"],
+    .config-row input[type="text"],
+    .config-row input[type="password"] {
+      padding: 5px 8px;
       border-radius: 6px;
       border: 1px solid #cbd5e1;
       background: #f8fafc;
@@ -349,7 +351,9 @@
       outline: none;
     }
     body.dark-mode .config-row select,
-    body.dark-mode .config-row input[type="number"] {
+    body.dark-mode .config-row input[type="number"],
+    body.dark-mode .config-row input[type="text"],
+    body.dark-mode .config-row input[type="password"] {
       background: #0f172a;
       color: #fff;
       border-color: #475569;
@@ -495,6 +499,11 @@
               <option value="false">No (Fixed Order)</option>
             </select>
           </div>
+
+          <div class="config-row">
+            <label title="Optional: Enables 50-channels-per-batch official YouTube API for 10,000+ channel tracking">YouTube API Key <small style="color:#64748b;">(Optional for 10k+ Batching)</small></label>
+            <input type="password" id="opt-yt-key" placeholder="AIzaSy... (optional)" style="width:220px;" />
+          </div>
         </div>
 
         <!-- Tracker Management & Bulk Import Controls -->
@@ -548,8 +557,10 @@
     let autoSort = true;
     let pollIntervalSec = 2;
     let pollTimerId = null;
+    let bgWorkerTimerId = null;
     let isPolling = false;
-    let poolIndex = 0;
+    let bgSweepIndex = 0;
+    let ytApiKey = '';
 
     // Smooth Continuous Animation State
     let smoothLeaderMax = 10;
@@ -638,7 +649,6 @@
 
         const img = new Image();
         img.crossOrigin = "Anonymous";
-        // Use CORS proxy for canvas sampling without cross-origin blocks
         img.src = `https://images.weserv.nl/?url=${encodeURIComponent(imgUrl)}&w=24&h=24`;
 
         img.onload = () => {
@@ -685,9 +695,33 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       API FETCHER (ROBUST WITH DIRECT FALLBACK)
+       API FETCHER (WITH 50-CHANNEL BATCHING & SINGLE FETCHER)
     ════════════════════════════════════════════════════════ */
-    async function fetchTarget(type, query) {
+    // Official YouTube API V3 Batcher (up to 50 IDs per single call!)
+    async function fetchYouTubeBatchOfficial(channelIds, key) {
+      if (!channelIds.length || !key) return {};
+      const idString = channelIds.join(',');
+      try {
+        const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${idString}&key=${key}`);
+        if (!res.ok) return {};
+        const data = await res.json();
+        const map = {};
+        if (data.items) {
+          data.items.forEach(item => {
+            map[item.id] = {
+              name: item.snippet?.title || item.id,
+              count: parseInt(item.statistics?.subscriberCount) || 0,
+              pfp: item.snippet?.thumbnails?.default?.url || ''
+            };
+          });
+        }
+        return map;
+      } catch (e) {
+        return {};
+      }
+    }
+
+    async function fetchSingleTarget(type, query) {
       if (!query || !query.trim()) return null;
       const q = query.trim();
 
@@ -730,7 +764,6 @@
               };
             }
           }
-          // If channel ID is invalid or deleted on YouTube
           return {
             name: `${q} (Unavailable)`,
             count: 0,
@@ -779,54 +812,51 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       FAST RESPONSIVE POLLING
+       DUAL-TIER POLLING ENGINE (HANDLES 10,000+ CHANNELS)
     ════════════════════════════════════════════════════════ */
-    async function pollAll() {
+    async function updateTrackerData(t, data, now) {
+      if (!data) return;
+      t.name = data.name;
+      if (data.pfp && data.pfp !== t.pfp) {
+        t.pfp = data.pfp;
+        extractColorFromImage(data.pfp, t.color).then(c => {
+          t.color = c;
+        });
+      }
+      if (t.initialCount === null) t.initialCount = data.count;
+      t.currentCount = data.count;
+      t.history.push({ t: now, v: data.count });
+      if (t.history.length > 25000) t.history.shift();
+    }
+
+    // Fast Hot Poller: Keeps Visible Leaders Fresh (Every 1-3s)
+    async function pollHotLeaders() {
       if (trackers.length === 0 || isPolling) return;
       isPolling = true;
       const now = Date.now();
 
-      // Prioritize uninitialized targets or top visible
-      const unpolled = trackers.filter(t => t.currentCount === null);
-      let batch = [];
+      // Top active visible bars
+      const sorted = [...trackers].sort((a, b) => (b.targetGain || 0) - (a.targetGain || 0));
+      const hotSlice = sorted.slice(0, Math.min(maxVisibleBars, 25));
 
-      if (unpolled.length > 0) {
-        batch = unpolled.slice(0, 15);
-      } else {
-        const sorted = [...trackers].sort((a, b) => (b.targetGain || 0) - (a.targetGain || 0));
-        const topSlice = sorted.slice(0, Math.min(maxVisibleBars, 20));
-        const rollingSlice = trackers.slice(poolIndex, poolIndex + 6);
-        poolIndex = (poolIndex + 6) % Math.max(1, trackers.length);
-
-        const set = new Set(topSlice.map(t => t.id));
-        batch = [...topSlice];
-        rollingSlice.forEach(t => {
-          if (!set.has(t.id)) {
-            batch.push(t);
-            set.add(t.id);
+      if (ytApiKey) {
+        // 50-ID Official Batch
+        const ytIds = hotSlice.filter(t => t.type === 'youtube').map(t => t.query);
+        const map = await fetchYouTubeBatchOfficial(ytIds, ytApiKey);
+        hotSlice.forEach(t => {
+          if (map[t.query]) {
+            updateTrackerData(t, map[t.query], now);
           }
         });
+      } else {
+        // Concurrent direct fetch
+        await Promise.all(hotSlice.map(async (t) => {
+          const data = await fetchSingleTarget(t.type, t.query);
+          updateTrackerData(t, data, now);
+        }));
       }
 
-      // Execute batch concurrently
-      await Promise.all(batch.map(async (t) => {
-        const data = await fetchTarget(t.type, t.query);
-        if (data) {
-          t.name = data.name;
-          if (data.pfp && data.pfp !== t.pfp) {
-            t.pfp = data.pfp;
-            extractColorFromImage(data.pfp, t.color).then(c => {
-              t.color = c;
-            });
-          }
-          if (t.initialCount === null) t.initialCount = data.count;
-          t.currentCount = data.count;
-          t.history.push({ t: now, v: data.count });
-          if (t.history.length > 25000) t.history.shift();
-        }
-      }));
-
-      // Update gain numbers
+      // Recompute gains
       for (const t of trackers) {
         t.targetGain = getRawGain(t, activeInterval, now);
         if (t.displayGain === undefined) t.displayGain = t.targetGain;
@@ -835,9 +865,51 @@
       isPolling = false;
     }
 
+    // Continuous Background Sweep Worker: Scans through full 10,000 pool
+    async function backgroundSweep() {
+      if (trackers.length === 0) return;
+      const now = Date.now();
+
+      if (ytApiKey) {
+        // Batch 50 at a time
+        const chunk = trackers.slice(bgSweepIndex, bgSweepIndex + 50);
+        bgSweepIndex = (bgSweepIndex + 50) % Math.max(1, trackers.length);
+        const ytIds = chunk.filter(t => t.type === 'youtube').map(t => t.query);
+        const map = await fetchYouTubeBatchOfficial(ytIds, ytApiKey);
+        chunk.forEach(t => {
+          if (map[t.query]) {
+            updateTrackerData(t, map[t.query], now);
+          }
+        });
+      } else {
+        // 10 channels per tick
+        const unpolled = trackers.filter(t => t.currentCount === null);
+        let chunk = [];
+        if (unpolled.length > 0) {
+          chunk = unpolled.slice(0, 10);
+        } else {
+          chunk = trackers.slice(bgSweepIndex, bgSweepIndex + 10);
+          bgSweepIndex = (bgSweepIndex + 10) % Math.max(1, trackers.length);
+        }
+
+        await Promise.all(chunk.map(async (t) => {
+          const data = await fetchSingleTarget(t.type, t.query);
+          updateTrackerData(t, data, now);
+        }));
+      }
+
+      for (const t of trackers) {
+        t.targetGain = getRawGain(t, activeInterval, now);
+        if (t.displayGain === undefined) t.displayGain = t.targetGain;
+      }
+    }
+
     function resetPollTimer() {
       if (pollTimerId) clearInterval(pollTimerId);
-      pollTimerId = setInterval(pollAll, Math.max(1, pollIntervalSec) * 1000);
+      if (bgWorkerTimerId) clearInterval(bgWorkerTimerId);
+
+      pollTimerId = setInterval(pollHotLeaders, Math.max(1, pollIntervalSec) * 1000);
+      bgWorkerTimerId = setInterval(backgroundSweep, 800); // Steady background stream
     }
 
     /* ════════════════════════════════════════════════════════
@@ -1047,7 +1119,7 @@
         document.querySelectorAll('.interval-pill').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         activeInterval = btn.dataset.interval;
-        pollAll();
+        pollHotLeaders();
       });
     });
 
@@ -1060,6 +1132,7 @@
     const inputList = document.getElementById('target-inputs-list');
     const refreshSlider = document.getElementById('opt-refresh-slider');
     const refreshInput = document.getElementById('opt-refresh-input');
+    const ytKeyInput = document.getElementById('opt-yt-key');
 
     const bulkModal = document.getElementById('bulk-modal');
     const bulkText = document.getElementById('bulk-paste-text');
@@ -1078,6 +1151,7 @@
       document.getElementById('opt-sort-mode').value = String(autoSort);
       refreshSlider.value = String(pollIntervalSec);
       refreshInput.value = String(pollIntervalSec);
+      ytKeyInput.value = ytApiKey;
 
       document.getElementById('tracker-count-badge').textContent = `Tracked Entities (${trackers.length})`;
 
@@ -1215,7 +1289,7 @@
           document.getElementById('opt-max-bars').value = "15";
         }
         openModal();
-        pollAll();
+        pollHotLeaders();
       }
     }
 
@@ -1223,6 +1297,7 @@
       maxVisibleBars = parseInt(document.getElementById('opt-max-bars').value) || 10;
       autoSort = document.getElementById('opt-sort-mode').value === 'true';
       pollIntervalSec = Math.max(1, parseInt(refreshInput.value) || 2);
+      ytApiKey = ytKeyInput.value.trim();
 
       const rows = inputList.querySelectorAll('.target-input-row');
       if (rows.length > 0) {
@@ -1257,7 +1332,7 @@
       saveState();
 
       if (trackers.length > 0) {
-        pollAll();
+        pollHotLeaders();
       }
     });
 
@@ -1292,7 +1367,8 @@
           isDarkMode,
           maxVisibleBars,
           autoSort,
-          pollIntervalSec
+          pollIntervalSec,
+          ytApiKey
         };
         localStorage.setItem('gain_graph_dynamic_v2', JSON.stringify(data));
       } catch (e) {}
@@ -1326,6 +1402,7 @@
             if (d.maxVisibleBars) maxVisibleBars = d.maxVisibleBars;
             if (d.autoSort !== undefined) autoSort = d.autoSort;
             if (d.pollIntervalSec) pollIntervalSec = d.pollIntervalSec;
+            if (d.ytApiKey) ytApiKey = d.ytApiKey;
             return;
           }
         }
@@ -1342,7 +1419,7 @@
     window.addEventListener('beforeunload', saveState);
 
     loadState();
-    pollAll();
+    pollHotLeaders();
     resetPollTimer();
 
     // Start 60FPS continuous animation
