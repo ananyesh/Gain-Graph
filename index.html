@@ -482,8 +482,8 @@
           <div class="config-row">
             <label>Refresh Interval</label>
             <div style="display:flex; align-items:center; gap:8px; width:220px;">
-              <input type="range" id="opt-refresh-slider" min="1" max="60" step="1" value="3" style="flex:1; cursor:pointer;" />
-              <input type="number" id="opt-refresh-input" min="1" max="60" step="1" value="3" style="width:48px; text-align:center;" />
+              <input type="range" id="opt-refresh-slider" min="1" max="60" step="1" value="2" style="flex:1; cursor:pointer;" />
+              <input type="number" id="opt-refresh-input" min="1" max="60" step="1" value="2" style="width:48px; text-align:center;" />
               <span style="font-size:13px; color:#64748b; font-weight:600;">s</span>
             </div>
           </div>
@@ -532,7 +532,7 @@
       </div>
       <div class="modal-body">
         <p style="font-size:12px; color:#64748b;">Paste YouTube IDs (e.g. UC...), Roblox URLs, or channel links (one per line):</p>
-        <textarea id="bulk-paste-text" rows="12" placeholder="UCnBvPsLwJRVdugzv8ijo-tg&#10;UCnaKddR1oxvCjZy3RHYq2Xw&#10;https://www.roblox.com/games/189707" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family:monospace; font-size:12px; resize:vertical; outline:none;"></textarea>
+        <textarea id="bulk-paste-text" rows="12" placeholder="UCnaKddR1oxvCjZy3RHYq2Xw&#10;UCnNPvF3PeSLh5oSSw3Tp5KQ&#10;UCnNoL2uQUx7eqDN82IiwlQQ" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family:monospace; font-size:12px; resize:vertical; outline:none;"></textarea>
       </div>
       <div class="modal-foot">
         <button class="btn-action btn-secondary" id="btn-cancel-bulk">Cancel</button>
@@ -546,7 +546,7 @@
     let isDarkMode = false;
     let maxVisibleBars = 10;
     let autoSort = true;
-    let pollIntervalSec = 3;
+    let pollIntervalSec = 2;
     let pollTimerId = null;
     let isPolling = false;
     let poolIndex = 0;
@@ -557,6 +557,20 @@
     // Trackers State: [ { id, type, query, color, name, pfp, initialCount, currentCount, targetGain, displayGain, prevRank, history } ]
     let trackers = [];
     let nextId = 1;
+
+    // Palette generator for fallback vibrant colors
+    const PALETTE = [
+      '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899',
+      '#06b6d4', '#f97316', '#14b8a6', '#6366f1', '#84cc16', '#d946ef'
+    ];
+
+    function getColorForString(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      return PALETTE[Math.abs(hash) % PALETTE.length];
+    }
 
     // Round human steps for moving X-axis ruler
     const NICE_STEPS = [
@@ -577,49 +591,6 @@
       }
       return 1000000;
     }
-
-    /* ════════════════════════════════════════════════════════
-       THROTTLED REQUEST QUEUE (PREVENTS 429 TOO MANY REQUESTS)
-    ════════════════════════════════════════════════════════ */
-    class SafeQueue {
-      constructor(concurrency = 3, intervalMs = 250) {
-        this.concurrency = concurrency;
-        this.intervalMs = intervalMs;
-        this.queue = [];
-        this.running = 0;
-        this.blockedUntil = 0;
-      }
-
-      add(fn) {
-        return new Promise(resolve => {
-          this.queue.push({ fn, resolve });
-          this.pump();
-        });
-      }
-
-      pump() {
-        if (this.running >= this.concurrency || this.queue.length === 0) return;
-        if (Date.now() < this.blockedUntil) {
-          setTimeout(() => this.pump(), 500);
-          return;
-        }
-
-        const task = this.queue.shift();
-        this.running++;
-
-        task.fn().then(result => {
-          this.running--;
-          task.resolve(result);
-          setTimeout(() => this.pump(), this.intervalMs);
-        }).catch(() => {
-          this.running--;
-          task.resolve(null);
-          setTimeout(() => this.pump(), this.intervalMs);
-        });
-      }
-    }
-
-    const reqQueue = new SafeQueue(3, 200);
 
     /* ════════════════════════════════════════════════════════
        DYNAMIC RESPONSIVE FULL-SCREEN AUTO-FIT SIZING
@@ -659,7 +630,7 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       DOMINANT COLOR EXTRACTION FROM PFP IMAGE
+       CORS-SAFE DOMINANT COLOR SAMPLING
     ════════════════════════════════════════════════════════ */
     function extractColorFromImage(imgUrl, fallbackColor = '#3b82f6') {
       return new Promise((resolve) => {
@@ -667,7 +638,8 @@
 
         const img = new Image();
         img.crossOrigin = "Anonymous";
-        img.src = imgUrl;
+        // Use CORS proxy for canvas sampling without cross-origin blocks
+        img.src = `https://images.weserv.nl/?url=${encodeURIComponent(imgUrl)}&w=24&h=24`;
 
         img.onload = () => {
           try {
@@ -713,106 +685,71 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       API FETCHER (WITH 429 BACKOFF & DUAL FALLBACK)
+       API FETCHER (ROBUST WITH DIRECT FALLBACK)
     ════════════════════════════════════════════════════════ */
     async function fetchTarget(type, query) {
       if (!query || !query.trim()) return null;
       const q = query.trim();
 
-      return reqQueue.add(async () => {
-        try {
-          if (type === 'roblox') {
-            const res = await fetch(`https://groups.roblox.com/v1/groups/${q}`);
-            if (!res.ok) return null;
-            const d = await res.json();
-            let icon = '';
-            try {
-              const iconRes = await fetch(`https://thumbnails.roblox.com/v1/groups/icons?groupIds=${q}&size=150x150&format=Png&isCircular=false`);
-              const idata = await iconRes?.json();
-              icon = idata?.data?.[0]?.imageUrl || '';
-            } catch(e) {}
-            return { name: d.name || `Group ${q}`, count: d.memberCount || 0, pfp: icon };
-          }
+      try {
+        if (type === 'roblox') {
+          const res = await fetch(`https://groups.roblox.com/v1/groups/${q}`);
+          if (!res.ok) return null;
+          const d = await res.json();
+          let icon = '';
+          try {
+            const iconRes = await fetch(`https://thumbnails.roblox.com/v1/groups/icons?groupIds=${q}&size=150x150&format=Png&isCircular=false`);
+            const idata = await iconRes?.json();
+            icon = idata?.data?.[0]?.imageUrl || '';
+          } catch(e) {}
+          return { name: d.name || `Group ${q}`, count: d.memberCount || 0, pfp: icon };
+        }
 
-          if (type === 'roblox-game-visits' || type === 'roblox-game-players') {
-            const res = await fetch(`https://mixerno.space/api/roblox-game-counter/user/${q}`);
-            if (res.status === 429) {
-              reqQueue.blockedUntil = Date.now() + 4000;
-              return null;
+        if (type === 'roblox-game-visits' || type === 'roblox-game-players') {
+          const res = await fetch(`https://mixerno.space/api/roblox-game-counter/user/${q}`);
+          if (!res.ok) return null;
+          const d = await res.json();
+          const visits = d?.counts?.[0]?.count ?? d?.counts?.find(c => c.value === 'visits')?.count ?? 0;
+          const players = d?.counts?.[1]?.count ?? d?.counts?.find(c => c.value === 'playing')?.count ?? 0;
+          return {
+            name: d?.user?.[0]?.count || `Roblox Game ${q}`,
+            count: type === 'roblox-game-visits' ? visits : players,
+            pfp: d?.user?.[1]?.count || ''
+          };
+        }
+
+        if (type === 'youtube' || type === 'youtube-sctools') {
+          const res = await fetch(`https://mixerno.space/api/youtube-channel-counter/user/${q}`);
+          if (res.ok) {
+            const d = await res.json();
+            if (d && d.counts && d.counts[0]) {
+              return {
+                name: d?.user?.[0]?.count || `YT ${q}`,
+                count: d?.counts?.[0]?.count || 0,
+                pfp: d?.user?.[1]?.count || ''
+              };
             }
-            if (!res.ok) return null;
-            const d = await res.json();
-            const visits = d?.counts?.[0]?.count ?? d?.counts?.find(c => c.value === 'visits')?.count ?? 0;
-            const players = d?.counts?.[1]?.count ?? d?.counts?.find(c => c.value === 'playing')?.count ?? 0;
-            return {
-              name: d?.user?.[0]?.count || `Roblox Game ${q}`,
-              count: type === 'roblox-game-visits' ? visits : players,
-              pfp: d?.user?.[1]?.count || ''
-            };
           }
+          // If channel ID is invalid or deleted on YouTube
+          return {
+            name: `${q} (Unavailable)`,
+            count: 0,
+            pfp: ''
+          };
+        }
 
-          if (type === 'youtube') {
-            // Mixerno Primary
-            try {
-              const res = await fetch(`https://mixerno.space/api/youtube-channel-counter/user/${q}`);
-              if (res.status === 429) {
-                reqQueue.blockedUntil = Date.now() + 5000;
-              } else if (res.ok) {
-                const d = await res.json();
-                if (d?.counts?.[0]?.count !== undefined) {
-                  return {
-                    name: d?.user?.[0]?.count || `YT ${q}`,
-                    count: d?.counts?.[0]?.count || 0,
-                    pfp: d?.user?.[1]?.count || ''
-                  };
-                }
-              }
-            } catch(e) {}
-
-            // Subscribercounter Secondary
-            try {
-              const res2 = await fetch(`https://api.subscribercounter.nl/api/youtube-view-counter/${q}/data`);
-              if (res2.ok) {
-                const d2 = await res2.json();
-                if (d2?.subCount !== undefined) {
-                  return {
-                    name: d2?.channelName || `YT ${q}`,
-                    count: d2?.subCount || 0,
-                    pfp: d2?.channelAvatar || ''
-                  };
-                }
-              }
-            } catch(e) {}
-          }
-
-          if (type === 'youtube-sctools') {
-            const res = await fetch(`https://api.subscribercounter.nl/api/youtube-view-counter/${q}/data`);
-            if (!res.ok) return null;
-            const d = await res.json();
-            return {
-              name: d?.channelName || `YT ${q}`,
-              count: d?.subCount || 0,
-              pfp: d?.channelAvatar || ''
-            };
-          }
-
-          if (type === 'tiktok' || type === 'twitter' || type === 'instagram') {
-            const res = await fetch(`https://mixerno.space/api/${type}-user-counter/user/${q}`);
-            if (res.status === 429) {
-              reqQueue.blockedUntil = Date.now() + 4000;
-              return null;
-            }
-            if (!res.ok) return null;
-            const d = await res.json();
-            return {
-              name: d?.user?.[0]?.count || `@${q}`,
-              count: d?.counts?.[0]?.count || 0,
-              pfp: d?.user?.[1]?.count || ''
-            };
-          }
-        } catch (e) {}
-        return null;
-      });
+        if (type === 'tiktok' || type === 'twitter' || type === 'instagram') {
+          const res = await fetch(`https://mixerno.space/api/${type}-user-counter/user/${q}`);
+          if (!res.ok) return null;
+          const d = await res.json();
+          return {
+            name: d?.user?.[0]?.count || `@${q}`,
+            count: d?.counts?.[0]?.count || 0,
+            pfp: d?.user?.[1]?.count || ''
+          };
+        }
+      } catch (e) {}
+      return null;
     }
 
     /* ════════════════════════════════════════════════════════
@@ -842,26 +779,24 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       POLLING LOOP (PRIORITY TOP + STEADY REFRESH)
+       FAST RESPONSIVE POLLING
     ════════════════════════════════════════════════════════ */
     async function pollAll() {
       if (trackers.length === 0 || isPolling) return;
       isPolling = true;
       const now = Date.now();
 
-      // Gather targets to poll this tick:
-      // 1. All uninitialized targets (up to 8 per batch to avoid flooding)
+      // Prioritize uninitialized targets or top visible
       const unpolled = trackers.filter(t => t.currentCount === null);
       let batch = [];
 
       if (unpolled.length > 0) {
-        batch = unpolled.slice(0, 8);
+        batch = unpolled.slice(0, 15);
       } else {
-        // Top visible + 4 from rolling pool
         const sorted = [...trackers].sort((a, b) => (b.targetGain || 0) - (a.targetGain || 0));
-        const topSlice = sorted.slice(0, Math.min(maxVisibleBars, 15));
-        const rollingSlice = trackers.slice(poolIndex, poolIndex + 4);
-        poolIndex = (poolIndex + 4) % Math.max(1, trackers.length);
+        const topSlice = sorted.slice(0, Math.min(maxVisibleBars, 20));
+        const rollingSlice = trackers.slice(poolIndex, poolIndex + 6);
+        poolIndex = (poolIndex + 6) % Math.max(1, trackers.length);
 
         const set = new Set(topSlice.map(t => t.id));
         batch = [...topSlice];
@@ -873,14 +808,14 @@
         });
       }
 
-      // Process batch safely through queue
+      // Execute batch concurrently
       await Promise.all(batch.map(async (t) => {
         const data = await fetchTarget(t.type, t.query);
         if (data) {
           t.name = data.name;
           if (data.pfp && data.pfp !== t.pfp) {
             t.pfp = data.pfp;
-            extractColorFromImage(data.pfp).then(c => {
+            extractColorFromImage(data.pfp, t.color).then(c => {
               t.color = c;
             });
           }
@@ -891,7 +826,7 @@
         }
       }));
 
-      // Update gains
+      // Update gain numbers
       for (const t of trackers) {
         t.targetGain = getRawGain(t, activeInterval, now);
         if (t.displayGain === undefined) t.displayGain = t.targetGain;
@@ -1260,7 +1195,7 @@
             id: nextId++,
             type: item.type,
             query: item.query,
-            color: '#3b82f6',
+            color: getColorForString(item.query),
             name: item.query,
             pfp: '',
             initialCount: null,
@@ -1287,7 +1222,7 @@
     document.getElementById('btn-save-settings').addEventListener('click', () => {
       maxVisibleBars = parseInt(document.getElementById('opt-max-bars').value) || 10;
       autoSort = document.getElementById('opt-sort-mode').value === 'true';
-      pollIntervalSec = Math.max(1, parseInt(refreshInput.value) || 3);
+      pollIntervalSec = Math.max(1, parseInt(refreshInput.value) || 2);
 
       const rows = inputList.querySelectorAll('.target-input-row');
       if (rows.length > 0) {
@@ -1302,7 +1237,7 @@
                 id: nextId++,
                 type,
                 query,
-                color: '#3b82f6',
+                color: getColorForString(query),
                 name: query,
                 pfp: '',
                 initialCount: null,
@@ -1373,7 +1308,7 @@
               id: nextId++,
               type: t.type,
               query: t.query,
-              color: t.color || '#3b82f6',
+              color: t.color || getColorForString(t.query),
               name: t.query,
               pfp: '',
               initialCount: null,
