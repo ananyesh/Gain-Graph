@@ -596,6 +596,15 @@
       return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
     }
 
+    // Build optimized avatar image URL with multi-tier proxy support
+    function getOptimizedAvatarUrl(pfp, name, color) {
+      if (!pfp || !pfp.startsWith('http')) {
+        return getDefaultAvatar(name, color);
+      }
+      // Route Google / YouTube CDN images through fast Cloudflare image proxy to eliminate 403 blocks
+      return `https://wsrv.nl/?url=${encodeURIComponent(pfp)}&w=140&h=140&fit=cover&output=webp`;
+    }
+
     // Round human steps for moving X-axis ruler
     const NICE_STEPS = [
       1, 2, 5, 10, 20, 25, 50, 100, 250, 500,
@@ -910,7 +919,7 @@
       let items = trackers.map(t => ({
         id: t.id,
         name: t.name || t.query,
-        pfp: t.pfp || getDefaultAvatar(t.name || t.query, t.color || '#3b82f6'),
+        rawPfp: t.pfp || '',
         color: t.color || '#3b82f6',
         displayVal: t.displayGain || 0,
         targetVal: t.targetGain || 0,
@@ -975,11 +984,13 @@
         const ratio = Math.max(0, Math.min(1, item.displayVal / visibleMax));
         const widthPct = (ratio * 100).toFixed(2);
         const isShort = ratio < 0.18;
-        const fallbackAvatar = getDefaultAvatar(item.name, item.color);
+
+        const avatarOptimized = getOptimizedAvatarUrl(item.rawPfp, item.name, item.color);
+        const fallbackBadge = getDefaultAvatar(item.name, item.color);
 
         row.innerHTML = `
           <div class="avatar-wrap">
-            <img class="avatar-img" src="${item.pfp}" alt="pfp" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${fallbackAvatar}';" />
+            <img class="avatar-img" src="${avatarOptimized}" alt="pfp" referrerpolicy="no-referrer" data-raw="${item.rawPfp}" onerror="if(this.dataset.triedDirect!=='1' && this.dataset.raw){this.dataset.triedDirect='1';this.src=this.dataset.raw;}else{this.onerror=null;this.src='${fallbackBadge}';}" />
           </div>
           <div class="bar-track">
             <div class="bar-fill" style="width: ${widthPct}%; background-color: ${item.color};">
