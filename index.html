@@ -37,10 +37,10 @@
     /* ── Top X-Axis Scale & Vertical Gridlines ── */
     #grid-overlay {
       position: absolute;
-      top: 60px;
+      top: 56px;
       bottom: 24px;
       left: 180px; /* Space for avatars */
-      right: 40px;
+      right: 80px; /* Space for right value numbers */
       pointer-events: none;
       z-index: 1;
     }
@@ -56,29 +56,26 @@
       background: #1e293b;
     }
 
-    .grid-axis-zero {
-      background: #3b82f6 !important;
-      width: 2px !important;
-    }
-
     #scale-header {
-      height: 36px;
-      margin-left: 180px; /* Aligned with chart area */
+      height: 28px;
+      margin-left: 180px;
+      margin-right: 80px;
       position: relative;
-      font-size: 14px;
-      font-weight: 500;
-      color: #64748b;
-      margin-bottom: 12px;
-      z-index: 2;
+      margin-bottom: 8px;
+      z-index: 10;
     }
 
     .scale-label {
       position: absolute;
       transform: translateX(-50%);
-      top: 4px;
+      top: 0;
       white-space: nowrap;
       font-size: 14px;
       font-weight: 500;
+      color: #475569;
+    }
+    body.dark-mode .scale-label {
+      color: #94a3b8;
     }
 
     /* ── Bars Container ── */
@@ -130,6 +127,7 @@
       position: relative;
       display: flex;
       align-items: center;
+      margin-right: 80px; /* Leave space so numbers at 100% don't clip */
     }
 
     .bar-fill {
@@ -139,9 +137,11 @@
       border-radius: 0;
       display: flex;
       align-items: center;
-      padding: 0 18px;
+      padding: 0 16px;
       transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.4s ease;
-      position: relative;
+      position: absolute;
+      left: 0;
+      top: 0;
       overflow: hidden;
       white-space: nowrap;
     }
@@ -157,16 +157,18 @@
       z-index: 2;
     }
 
+    /* Number outside the bar fill */
     .bar-value-text {
       position: absolute;
-      left: 100%;
-      margin-left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
       font-size: 17px;
       font-weight: 600;
       color: #1e293b;
       white-space: nowrap;
       z-index: 4;
       transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+      pointer-events: none;
     }
     body.dark-mode .bar-value-text {
       color: #f8fafc;
@@ -561,7 +563,7 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       CHART RENDERING (EXACT MATCH TO USER SCREENSHOT)
+       CHART RENDERING (CLEAN GRID & VISIBLE NUMBERS)
     ════════════════════════════════════════════════════════ */
     function render() {
       const now = Date.now();
@@ -587,7 +589,7 @@
         if (topScale === maxVal) topScale += stepBase;
       }
 
-      // 1. Render Top Scale Ticks & Vertical Gridlines
+      // 1. Render Top Scale Ticks & Vertical Gridlines (No blue line)
       const scaleHeader = document.getElementById('scale-header');
       const gridOverlay = document.getElementById('grid-overlay');
       const tickCount = 4; // 0, 25%, 50%, 75%, 100%
@@ -599,21 +601,21 @@
         const pct = (i / tickCount) * 100;
         const tickVal = Math.round((topScale / tickCount) * i);
 
-        // Scale Text
+        // Scale Text at Top
         const lbl = document.createElement('div');
         lbl.className = 'scale-label';
         lbl.style.left = `${pct}%`;
         lbl.textContent = tickVal.toLocaleString();
         scaleHeader.appendChild(lbl);
 
-        // Vertical Line
+        // Vertical Grid Line (Consistent light gray)
         const line = document.createElement('div');
-        line.className = 'grid-line' + (i === 0 ? ' grid-axis-zero' : '');
+        line.className = 'grid-line';
         line.style.left = `${pct}%`;
         gridOverlay.appendChild(line);
       }
 
-      // 2. Render Horizontal Bars
+      // 2. Render Horizontal Bars with Unclipped Outside Numbers
       const barsContainer = document.getElementById('bars-container');
       barsContainer.innerHTML = items.map(item => {
         const ratio = Math.max(0, Math.min(1, item.value / topScale));
@@ -627,8 +629,8 @@
             <div class="bar-track">
               <div class="bar-fill" style="width: ${widthPct}%; background-color: ${item.color};">
                 <span class="bar-name-inside">${item.name}</span>
-                <span class="bar-value-text">${item.value.toLocaleString()}</span>
               </div>
+              <span class="bar-value-text" style="left: calc(${widthPct}% + 12px);">${item.value.toLocaleString()}</span>
             </div>
           </div>
         `;
