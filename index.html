@@ -482,8 +482,8 @@
           <div class="config-row">
             <label>Refresh Interval</label>
             <div style="display:flex; align-items:center; gap:8px; width:220px;">
-              <input type="range" id="opt-refresh-slider" min="1" max="60" step="1" value="2" style="flex:1; cursor:pointer;" />
-              <input type="number" id="opt-refresh-input" min="1" max="60" step="1" value="2" style="width:48px; text-align:center;" />
+              <input type="range" id="opt-refresh-slider" min="1" max="60" step="1" value="3" style="flex:1; cursor:pointer;" />
+              <input type="number" id="opt-refresh-input" min="1" max="60" step="1" value="3" style="width:48px; text-align:center;" />
               <span style="font-size:13px; color:#64748b; font-weight:600;">s</span>
             </div>
           </div>
@@ -546,10 +546,10 @@
     let isDarkMode = false;
     let maxVisibleBars = 10;
     let autoSort = true;
-    let pollIntervalSec = 2;
+    let pollIntervalSec = 3;
     let pollTimerId = null;
     let isPolling = false;
-    let poolOffset = 0;
+    let poolIndex = 0;
 
     // Smooth Continuous Animation State
     let smoothLeaderMax = 10;
@@ -577,6 +577,49 @@
       }
       return 1000000;
     }
+
+    /* ════════════════════════════════════════════════════════
+       THROTTLED REQUEST QUEUE (PREVENTS 429 TOO MANY REQUESTS)
+    ════════════════════════════════════════════════════════ */
+    class SafeQueue {
+      constructor(concurrency = 3, intervalMs = 250) {
+        this.concurrency = concurrency;
+        this.intervalMs = intervalMs;
+        this.queue = [];
+        this.running = 0;
+        this.blockedUntil = 0;
+      }
+
+      add(fn) {
+        return new Promise(resolve => {
+          this.queue.push({ fn, resolve });
+          this.pump();
+        });
+      }
+
+      pump() {
+        if (this.running >= this.concurrency || this.queue.length === 0) return;
+        if (Date.now() < this.blockedUntil) {
+          setTimeout(() => this.pump(), 500);
+          return;
+        }
+
+        const task = this.queue.shift();
+        this.running++;
+
+        task.fn().then(result => {
+          this.running--;
+          task.resolve(result);
+          setTimeout(() => this.pump(), this.intervalMs);
+        }).catch(() => {
+          this.running--;
+          task.resolve(null);
+          setTimeout(() => this.pump(), this.intervalMs);
+        });
+      }
+    }
+
+    const reqQueue = new SafeQueue(3, 200);
 
     /* ════════════════════════════════════════════════════════
        DYNAMIC RESPONSIVE FULL-SCREEN AUTO-FIT SIZING
@@ -670,102 +713,106 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       HIGH PERFORMANCE CONCURRENT FETCHER WITH TIMEOUT
+       API FETCHER (WITH 429 BACKOFF & DUAL FALLBACK)
     ════════════════════════════════════════════════════════ */
-    async function fetchWithTimeout(url, timeoutMs = 4000) {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const response = await fetch(url, { signal: controller.signal });
-        clearTimeout(id);
-        return response;
-      } catch (err) {
-        clearTimeout(id);
-        return null;
-      }
-    }
-
     async function fetchTarget(type, query) {
       if (!query || !query.trim()) return null;
       const q = query.trim();
 
-      try {
-        if (type === 'roblox') {
-          const res = await fetchWithTimeout(`https://groups.roblox.com/v1/groups/${q}`);
-          if (!res || !res.ok) return null;
-          const d = await res.json();
-          let icon = '';
-          try {
-            const iconRes = await fetchWithTimeout(`https://thumbnails.roblox.com/v1/groups/icons?groupIds=${q}&size=150x150&format=Png&isCircular=false`);
-            const idata = await iconRes?.json();
-            icon = idata?.data?.[0]?.imageUrl || '';
-          } catch(e) {}
-          return { name: d.name || `Group ${q}`, count: d.memberCount || 0, pfp: icon };
-        }
-
-        if (type === 'roblox-game-visits' || type === 'roblox-game-players') {
-          const res = await fetchWithTimeout(`https://mixerno.space/api/roblox-game-counter/user/${q}`);
-          if (!res || !res.ok) return null;
-          const d = await res.json();
-          const visits = d?.counts?.[0]?.count ?? d?.counts?.find(c => c.value === 'visits')?.count ?? 0;
-          const players = d?.counts?.[1]?.count ?? d?.counts?.find(c => c.value === 'playing')?.count ?? 0;
-          return {
-            name: d?.user?.[0]?.count || `Roblox Game ${q}`,
-            count: type === 'roblox-game-visits' ? visits : players,
-            pfp: d?.user?.[1]?.count || ''
-          };
-        }
-
-        if (type === 'youtube') {
-          // Primary: Mixerno API
-          let res = await fetchWithTimeout(`https://mixerno.space/api/youtube-channel-counter/user/${q}`);
-          if (res && res.ok) {
+      return reqQueue.add(async () => {
+        try {
+          if (type === 'roblox') {
+            const res = await fetch(`https://groups.roblox.com/v1/groups/${q}`);
+            if (!res.ok) return null;
             const d = await res.json();
-            if (d?.counts?.[0]?.count !== undefined) {
-              return {
-                name: d?.user?.[0]?.count || `YT ${q}`,
-                count: d?.counts?.[0]?.count || 0,
-                pfp: d?.user?.[1]?.count || ''
-              };
-            }
+            let icon = '';
+            try {
+              const iconRes = await fetch(`https://thumbnails.roblox.com/v1/groups/icons?groupIds=${q}&size=150x150&format=Png&isCircular=false`);
+              const idata = await iconRes?.json();
+              icon = idata?.data?.[0]?.imageUrl || '';
+            } catch(e) {}
+            return { name: d.name || `Group ${q}`, count: d.memberCount || 0, pfp: icon };
           }
-          // Secondary Fallback: SubscriberCounter API
-          let res2 = await fetchWithTimeout(`https://api.subscribercounter.nl/api/youtube-view-counter/${q}/data`);
-          if (res2 && res2.ok) {
-            const d2 = await res2.json();
-            if (d2?.subCount !== undefined) {
-              return {
-                name: d2?.channelName || `YT ${q}`,
-                count: d2?.subCount || 0,
-                pfp: d2?.channelAvatar || ''
-              };
+
+          if (type === 'roblox-game-visits' || type === 'roblox-game-players') {
+            const res = await fetch(`https://mixerno.space/api/roblox-game-counter/user/${q}`);
+            if (res.status === 429) {
+              reqQueue.blockedUntil = Date.now() + 4000;
+              return null;
             }
+            if (!res.ok) return null;
+            const d = await res.json();
+            const visits = d?.counts?.[0]?.count ?? d?.counts?.find(c => c.value === 'visits')?.count ?? 0;
+            const players = d?.counts?.[1]?.count ?? d?.counts?.find(c => c.value === 'playing')?.count ?? 0;
+            return {
+              name: d?.user?.[0]?.count || `Roblox Game ${q}`,
+              count: type === 'roblox-game-visits' ? visits : players,
+              pfp: d?.user?.[1]?.count || ''
+            };
           }
-        }
 
-        if (type === 'youtube-sctools') {
-          const res = await fetchWithTimeout(`https://api.subscribercounter.nl/api/youtube-view-counter/${q}/data`);
-          if (!res || !res.ok) return null;
-          const d = await res.json();
-          return {
-            name: d?.channelName || `YT ${q}`,
-            count: d?.subCount || 0,
-            pfp: d?.channelAvatar || ''
-          };
-        }
+          if (type === 'youtube') {
+            // Mixerno Primary
+            try {
+              const res = await fetch(`https://mixerno.space/api/youtube-channel-counter/user/${q}`);
+              if (res.status === 429) {
+                reqQueue.blockedUntil = Date.now() + 5000;
+              } else if (res.ok) {
+                const d = await res.json();
+                if (d?.counts?.[0]?.count !== undefined) {
+                  return {
+                    name: d?.user?.[0]?.count || `YT ${q}`,
+                    count: d?.counts?.[0]?.count || 0,
+                    pfp: d?.user?.[1]?.count || ''
+                  };
+                }
+              }
+            } catch(e) {}
 
-        if (type === 'tiktok' || type === 'twitter' || type === 'instagram') {
-          const res = await fetchWithTimeout(`https://mixerno.space/api/${type}-user-counter/user/${q}`);
-          if (!res || !res.ok) return null;
-          const d = await res.json();
-          return {
-            name: d?.user?.[0]?.count || `@${q}`,
-            count: d?.counts?.[0]?.count || 0,
-            pfp: d?.user?.[1]?.count || ''
-          };
-        }
-      } catch (e) {}
-      return null;
+            // Subscribercounter Secondary
+            try {
+              const res2 = await fetch(`https://api.subscribercounter.nl/api/youtube-view-counter/${q}/data`);
+              if (res2.ok) {
+                const d2 = await res2.json();
+                if (d2?.subCount !== undefined) {
+                  return {
+                    name: d2?.channelName || `YT ${q}`,
+                    count: d2?.subCount || 0,
+                    pfp: d2?.channelAvatar || ''
+                  };
+                }
+              }
+            } catch(e) {}
+          }
+
+          if (type === 'youtube-sctools') {
+            const res = await fetch(`https://api.subscribercounter.nl/api/youtube-view-counter/${q}/data`);
+            if (!res.ok) return null;
+            const d = await res.json();
+            return {
+              name: d?.channelName || `YT ${q}`,
+              count: d?.subCount || 0,
+              pfp: d?.channelAvatar || ''
+            };
+          }
+
+          if (type === 'tiktok' || type === 'twitter' || type === 'instagram') {
+            const res = await fetch(`https://mixerno.space/api/${type}-user-counter/user/${q}`);
+            if (res.status === 429) {
+              reqQueue.blockedUntil = Date.now() + 4000;
+              return null;
+            }
+            if (!res.ok) return null;
+            const d = await res.json();
+            return {
+              name: d?.user?.[0]?.count || `@${q}`,
+              count: d?.counts?.[0]?.count || 0,
+              pfp: d?.user?.[1]?.count || ''
+            };
+          }
+        } catch (e) {}
+        return null;
+      });
     }
 
     /* ════════════════════════════════════════════════════════
@@ -795,59 +842,56 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       FAST BATCH CONCURRENT POLLER (HANDLES 1,000+ TARGETS)
+       POLLING LOOP (PRIORITY TOP + STEADY REFRESH)
     ════════════════════════════════════════════════════════ */
     async function pollAll() {
       if (trackers.length === 0 || isPolling) return;
       isPolling = true;
       const now = Date.now();
 
-      // 1. Prioritize targets that have never been polled or are top visible
-      let priorityList = [];
+      // Gather targets to poll this tick:
+      // 1. All uninitialized targets (up to 8 per batch to avoid flooding)
       const unpolled = trackers.filter(t => t.currentCount === null);
+      let batch = [];
 
       if (unpolled.length > 0) {
-        priorityList = unpolled.slice(0, 30);
+        batch = unpolled.slice(0, 8);
       } else {
-        // Top visible candidates + round robin pool
+        // Top visible + 4 from rolling pool
         const sorted = [...trackers].sort((a, b) => (b.targetGain || 0) - (a.targetGain || 0));
-        const topVisible = sorted.slice(0, Math.min(maxVisibleBars + 5, 20));
-        const poolSlice = trackers.slice(poolOffset, poolOffset + 20);
-        poolOffset = (poolOffset + 20) % Math.max(1, trackers.length);
+        const topSlice = sorted.slice(0, Math.min(maxVisibleBars, 15));
+        const rollingSlice = trackers.slice(poolIndex, poolIndex + 4);
+        poolIndex = (poolIndex + 4) % Math.max(1, trackers.length);
 
-        const set = new Set(topVisible.map(t => t.id));
-        priorityList = [...topVisible];
-        poolSlice.forEach(t => {
+        const set = new Set(topSlice.map(t => t.id));
+        batch = [...topSlice];
+        rollingSlice.forEach(t => {
           if (!set.has(t.id)) {
-            priorityList.push(t);
+            batch.push(t);
             set.add(t.id);
           }
         });
       }
 
-      // Execute in parallel chunks of 10
-      const chunkSize = 10;
-      for (let i = 0; i < priorityList.length; i += chunkSize) {
-        const chunk = priorityList.slice(i, i + chunkSize);
-        await Promise.allSettled(chunk.map(async (t) => {
-          const data = await fetchTarget(t.type, t.query);
-          if (data) {
-            t.name = data.name;
-            if (data.pfp && data.pfp !== t.pfp) {
-              t.pfp = data.pfp;
-              extractColorFromImage(data.pfp).then(c => {
-                t.color = c;
-              });
-            }
-            if (t.initialCount === null) t.initialCount = data.count;
-            t.currentCount = data.count;
-            t.history.push({ t: now, v: data.count });
-            if (t.history.length > 25000) t.history.shift();
+      // Process batch safely through queue
+      await Promise.all(batch.map(async (t) => {
+        const data = await fetchTarget(t.type, t.query);
+        if (data) {
+          t.name = data.name;
+          if (data.pfp && data.pfp !== t.pfp) {
+            t.pfp = data.pfp;
+            extractColorFromImage(data.pfp).then(c => {
+              t.color = c;
+            });
           }
-        }));
-      }
+          if (t.initialCount === null) t.initialCount = data.count;
+          t.currentCount = data.count;
+          t.history.push({ t: now, v: data.count });
+          if (t.history.length > 25000) t.history.shift();
+        }
+      }));
 
-      // Update target gain values
+      // Update gains
       for (const t of trackers) {
         t.targetGain = getRawGain(t, activeInterval, now);
         if (t.displayGain === undefined) t.displayGain = t.targetGain;
@@ -858,7 +902,7 @@
 
     function resetPollTimer() {
       if (pollTimerId) clearInterval(pollTimerId);
-      pollTimerId = setInterval(pollAll, pollIntervalSec * 1000);
+      pollTimerId = setInterval(pollAll, Math.max(1, pollIntervalSec) * 1000);
     }
 
     /* ════════════════════════════════════════════════════════
@@ -1102,8 +1146,7 @@
 
       document.getElementById('tracker-count-badge').textContent = `Tracked Entities (${trackers.length})`;
 
-      // Render top 40 in editor for fast performance with large lists
-      const previewList = trackers.slice(0, 40);
+      const previewList = trackers.slice(0, 30);
       previewList.forEach(t => {
         const row = document.createElement('div');
         row.className = 'target-input-row';
@@ -1129,10 +1172,10 @@
         inputList.appendChild(row);
       });
 
-      if (trackers.length > 40) {
+      if (trackers.length > 30) {
         const note = document.createElement('div');
         note.style.cssText = 'font-size:12px; color:#64748b; text-align:center; padding:6px;';
-        note.textContent = `... and ${trackers.length - 40} more trackers loaded. Use "📋 Bulk Paste" to view/edit all at once.`;
+        note.textContent = `... and ${trackers.length - 30} more loaded. Use "📋 Bulk Paste" to view/edit all at once.`;
         inputList.appendChild(note);
       }
 
@@ -1244,9 +1287,8 @@
     document.getElementById('btn-save-settings').addEventListener('click', () => {
       maxVisibleBars = parseInt(document.getElementById('opt-max-bars').value) || 10;
       autoSort = document.getElementById('opt-sort-mode').value === 'true';
-      pollIntervalSec = Math.max(1, parseInt(refreshInput.value) || 2);
+      pollIntervalSec = Math.max(1, parseInt(refreshInput.value) || 3);
 
-      // If list was edited manually in the UI
       const rows = inputList.querySelectorAll('.target-input-row');
       if (rows.length > 0) {
         const editedQueries = new Set();
