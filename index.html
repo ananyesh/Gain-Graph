@@ -264,7 +264,7 @@
     body.dark-mode .f-btn:hover { color: #fff; }
 
     /* ── Settings Modal ── */
-    #settings-modal {
+    #settings-modal, #bulk-modal {
       display: none;
       position: fixed;
       inset: 0;
@@ -275,12 +275,12 @@
       justify-content: center;
       padding: 20px;
     }
-    #settings-modal.open { display: flex; }
+    #settings-modal.open, #bulk-modal.open { display: flex; }
 
     .modal-card {
       background: #ffffff;
       border-radius: 12px;
-      width: 560px;
+      width: 580px;
       max-width: 100%;
       box-shadow: 0 10px 30px rgba(0,0,0,0.25);
       overflow: hidden;
@@ -379,10 +379,15 @@
       background: #3b82f6;
       color: #fff;
       border: none;
-      padding: 8px 14px;
+      padding: 8px 12px;
       border-radius: 6px;
       font-weight: 600;
+      font-size: 13px;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
     .btn-secondary {
       background: #e2e8f0;
@@ -392,12 +397,19 @@
       background: #334155;
       color: #fff;
     }
+    .btn-secondary:hover {
+      background: #cbd5e1;
+    }
+    body.dark-mode .btn-secondary:hover {
+      background: #475569;
+    }
 
     .modal-foot {
       padding: 12px 18px;
       border-top: 1px solid #e2e8f0;
       display: flex;
       justify-content: space-between;
+      gap: 8px;
     }
     body.dark-mode .modal-foot { border-color: #334155; }
 
@@ -443,14 +455,15 @@
         <!-- Bar Count, Refresh Interval & Sort Configuration -->
         <div class="config-group">
           <div class="config-row">
-            <label>Max Visible Bars (5, 10, 15, 20...)</label>
+            <label>Max Visible Bars</label>
             <select id="opt-max-bars">
               <option value="2">2 Bars</option>
-              <option value="5" selected>5 Bars</option>
-              <option value="10">10 Bars</option>
+              <option value="5">5 Bars</option>
+              <option value="10" selected>10 Bars</option>
               <option value="15">15 Bars</option>
               <option value="20">20 Bars</option>
               <option value="30">30 Bars</option>
+              <option value="50">50 Bars</option>
             </select>
           </div>
 
@@ -472,13 +485,46 @@
           </div>
         </div>
 
-        <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;">Tracked Entities</div>
+        <!-- Tracker Management & Bulk Import Controls -->
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;">Tracked Entities</div>
+          <div style="display:flex; gap:6px;">
+            <button class="btn-action btn-secondary" id="btn-clear-all" style="padding:4px 8px; font-size:11px; color:#ef4444;">Clear All</button>
+          </div>
+        </div>
+
         <div id="target-inputs-list" style="display:flex;flex-direction:column;gap:8px;"></div>
-        <button class="btn-action btn-secondary" id="btn-add-row">＋ Add Another Tracker</button>
+
+        <!-- Action Row: Add single, Upload Notepad File, or Bulk Paste -->
+        <div style="display:flex; gap:8px; margin-top:4px;">
+          <button class="btn-action btn-secondary" id="btn-add-row" style="flex:1;">＋ Add Tracker</button>
+          <button class="btn-action btn-secondary" id="btn-upload-file" style="flex:1;">📁 Upload .txt File</button>
+          <button class="btn-action btn-secondary" id="btn-open-bulk" style="flex:1;">📋 Bulk Paste</button>
+          <input type="file" id="file-uploader" accept=".txt,.csv,.json" style="display:none;" />
+        </div>
+
       </div>
       <div class="modal-foot">
-        <button class="btn-action btn-secondary" id="btn-reset-gains">Reset Total Gain</button>
+        <button class="btn-action btn-secondary" id="btn-reset-gains">Reset Gains</button>
         <button class="btn-action" id="btn-save-settings">Save & Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk Paste Modal -->
+  <div id="bulk-modal">
+    <div class="modal-card" style="width:480px;">
+      <div class="modal-head">
+        <span>Bulk Paste Channel IDs / URLs</span>
+        <button id="btn-close-bulk" style="background:none;border:none;font-size:18px;cursor:pointer;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:12px; color:#64748b;">Paste multiple YouTube IDs (e.g. UC...), Roblox URLs, or channel links (one per line):</p>
+        <textarea id="bulk-paste-text" rows="10" placeholder="UCnBvPsLwJRVdugzv8ijo-tg&#10;UCnaKddR1oxvCjZy3RHYq2Xw&#10;https://www.roblox.com/games/189707" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family:monospace; font-size:12px; resize:vertical; outline:none;"></textarea>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-action btn-secondary" id="btn-cancel-bulk">Cancel</button>
+        <button class="btn-action" id="btn-apply-bulk">Import All Lines</button>
       </div>
     </div>
   </div>
@@ -871,6 +917,58 @@
     }
 
     /* ════════════════════════════════════════════════════════
+       SMART URL / ID LINE PARSER
+    ════════════════════════════════════════════════════════ */
+    function parseLineToTracker(rawLine) {
+      if (!rawLine) return null;
+      let line = rawLine.trim();
+      if (!line || line.startsWith('#') || line.startsWith('//')) return null;
+
+      line = line.replace(/^[",'\s]+|[",'\s]+$/g, '');
+
+      let type = 'youtube';
+      let query = line;
+
+      if (line.includes('youtube.com/channel/')) {
+        type = 'youtube';
+        const match = line.match(/channel\/([a-zA-Z0-9_\-]+)/);
+        if (match) query = match[1];
+      } else if (line.includes('youtube.com/@')) {
+        type = 'youtube';
+        const match = line.match(/@([a-zA-Z0-9_\-]+)/);
+        if (match) query = match[1];
+      } else if (line.startsWith('UC') && line.length >= 20) {
+        type = 'youtube';
+        query = line;
+      } else if (line.includes('roblox.com/games/')) {
+        type = 'roblox-game-visits';
+        const match = line.match(/roblox\.com\/games\/(\d+)/);
+        if (match) query = match[1];
+      } else if (line.includes('roblox.com/groups/')) {
+        type = 'roblox';
+        const match = line.match(/roblox\.com\/groups\/(\d+)/);
+        if (match) query = match[1];
+      } else if (line.includes('tiktok.com/@')) {
+        type = 'tiktok';
+        const match = line.match(/tiktok\.com\/@([a-zA-Z0-9_\.]+)/);
+        if (match) query = match[1];
+      } else if (line.includes('twitter.com/') || line.includes('x.com/')) {
+        type = 'twitter';
+        const match = line.match(/(?:twitter|x)\.com\/([a-zA-Z0-9_]+)/);
+        if (match) query = match[1];
+      } else if (line.includes('instagram.com/')) {
+        type = 'instagram';
+        const match = line.match(/instagram\.com\/([a-zA-Z0-9_\.]+)/);
+        if (match) query = match[1];
+      } else if (/^\d{5,}$/.test(line)) {
+        type = 'roblox-game-visits';
+        query = line;
+      }
+
+      return { type, query };
+    }
+
+    /* ════════════════════════════════════════════════════════
        INTERVAL SWITCHER & SETTINGS MODAL
     ════════════════════════════════════════════════════════ */
     document.querySelectorAll('.interval-pill').forEach(btn => {
@@ -892,7 +990,10 @@
     const refreshSlider = document.getElementById('opt-refresh-slider');
     const refreshInput = document.getElementById('opt-refresh-input');
 
-    // Sync slider & number input
+    const bulkModal = document.getElementById('bulk-modal');
+    const bulkText = document.getElementById('bulk-paste-text');
+    const fileUploader = document.getElementById('file-uploader');
+
     refreshSlider.addEventListener('input', () => {
       refreshInput.value = refreshSlider.value;
     });
@@ -956,6 +1057,74 @@
     document.getElementById('btn-close-modal').addEventListener('click', () => modal.classList.remove('open'));
     document.getElementById('btn-add-row').addEventListener('click', () => addRow('youtube', ''));
 
+    document.getElementById('btn-clear-all').addEventListener('click', () => {
+      if (confirm('Clear all tracker inputs?')) {
+        inputList.innerHTML = '';
+      }
+    });
+
+    // ── Notepad File Upload ──
+    document.getElementById('btn-upload-file').addEventListener('click', () => {
+      fileUploader.value = '';
+      fileUploader.click();
+    });
+
+    fileUploader.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target.result;
+        const lines = text.split(/\r?\n/);
+        let addedCount = 0;
+        lines.forEach(l => {
+          const item = parseLineToTracker(l);
+          if (item && item.query) {
+            addRow(item.type, item.query);
+            addedCount++;
+          }
+        });
+        if (addedCount > 0) {
+          const totalRows = inputList.querySelectorAll('.target-input-row').length;
+          if (totalRows > maxVisibleBars) {
+            maxVisibleBars = Math.min(50, Math.max(10, Math.ceil(totalRows / 5) * 5));
+            document.getElementById('opt-max-bars').value = String(maxVisibleBars);
+          }
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    // ── Bulk Paste Modal ──
+    document.getElementById('btn-open-bulk').addEventListener('click', () => {
+      bulkText.value = '';
+      bulkModal.classList.add('open');
+    });
+    document.getElementById('btn-close-bulk').addEventListener('click', () => bulkModal.classList.remove('open'));
+    document.getElementById('btn-cancel-bulk').addEventListener('click', () => bulkModal.classList.remove('open'));
+
+    document.getElementById('btn-apply-bulk').addEventListener('click', () => {
+      const text = bulkText.value;
+      const lines = text.split(/\r?\n/);
+      let addedCount = 0;
+      lines.forEach(l => {
+        const item = parseLineToTracker(l);
+        if (item && item.query) {
+          addRow(item.type, item.query);
+          addedCount++;
+        }
+      });
+      if (addedCount > 0) {
+        const totalRows = inputList.querySelectorAll('.target-input-row').length;
+        if (totalRows > maxVisibleBars) {
+          maxVisibleBars = Math.min(50, Math.max(10, Math.ceil(totalRows / 5) * 5));
+          document.getElementById('opt-max-bars').value = String(maxVisibleBars);
+        }
+      }
+      bulkModal.classList.remove('open');
+    });
+
     document.getElementById('btn-save-settings').addEventListener('click', () => {
       maxVisibleBars = parseInt(document.getElementById('opt-max-bars').value) || 10;
       autoSort = document.getElementById('opt-sort-mode').value === 'true';
@@ -1006,7 +1175,10 @@
 
     document.addEventListener('keydown', e => {
       if (e.key === 'h' || e.key === 'H') document.body.classList.toggle('clean');
-      if (e.key === 'Escape') modal.classList.remove('open');
+      if (e.key === 'Escape') {
+        modal.classList.remove('open');
+        bulkModal.classList.remove('open');
+      }
     });
 
     /* ════════════════════════════════════════════════════════
