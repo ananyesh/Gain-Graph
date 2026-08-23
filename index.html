@@ -569,13 +569,15 @@
     let trackers = [];
     let nextId = 1;
 
-    // Palette generator for fallback vibrant colors
+    // Fast deterministic vibrant palette generator (Zero network requests, zero CORS errors!)
     const PALETTE = [
       '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899',
-      '#06b6d4', '#f97316', '#14b8a6', '#6366f1', '#84cc16', '#d946ef'
+      '#06b6d4', '#f97316', '#14b8a6', '#6366f1', '#84cc16', '#d946ef',
+      '#e11d48', '#2563eb', '#059669', '#d97706', '#7c3aed', '#db2777'
     ];
 
     function getColorForString(str) {
+      if (!str) return '#3b82f6';
       let hash = 0;
       for (let i = 0; i < str.length; i++) {
         hash = str.charCodeAt(i) + ((hash << 5) - hash);
@@ -641,60 +643,6 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       CORS-SAFE DOMINANT COLOR SAMPLING
-    ════════════════════════════════════════════════════════ */
-    function extractColorFromImage(imgUrl, fallbackColor = '#3b82f6') {
-      return new Promise((resolve) => {
-        if (!imgUrl) return resolve(fallbackColor);
-
-        const img = new Image();
-        img.crossOrigin = "Anonymous";
-        img.src = `https://images.weserv.nl/?url=${encodeURIComponent(imgUrl)}&w=24&h=24`;
-
-        img.onload = () => {
-          try {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = 24;
-            canvas.height = 24;
-            ctx.drawImage(img, 0, 0, 24, 24);
-            const data = ctx.getImageData(0, 0, 24, 24).data;
-
-            let bestR = 59, bestG = 130, bestB = 246;
-            let maxSaturation = -1;
-
-            for (let i = 0; i < data.length; i += 4) {
-              const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
-              if (a < 128) continue;
-
-              const max = Math.max(r, g, b);
-              const min = Math.min(r, g, b);
-              const l = (max + min) / 510;
-              if (l < 0.12 || l > 0.92) continue;
-
-              const d = max - min;
-              const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
-
-              if (s > maxSaturation) {
-                maxSaturation = s;
-                bestR = r;
-                bestG = g;
-                bestB = b;
-              }
-            }
-
-            const hex = '#' + [bestR, bestG, bestB].map(x => x.toString(16).padStart(2, '0')).join('');
-            resolve(hex);
-          } catch (e) {
-            resolve(fallbackColor);
-          }
-        };
-
-        img.onerror = () => resolve(fallbackColor);
-      });
-    }
-
-    /* ════════════════════════════════════════════════════════
        API FETCHER (WITH 50-CHANNEL BATCHING & SINGLE FETCHER)
     ════════════════════════════════════════════════════════ */
     // Official YouTube API V3 Batcher (up to 50 IDs per single call!)
@@ -702,7 +650,7 @@
       if (!channelIds.length || !key) return {};
       const idString = channelIds.join(',');
       try {
-        const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${idString}&key=${key}`);
+        const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${encodeURIComponent(idString)}&key=${encodeURIComponent(key)}`);
         if (!res.ok) return {};
         const data = await res.json();
         const map = {};
@@ -722,8 +670,9 @@
     }
 
     async function fetchSingleTarget(type, query) {
-      if (!query || !query.trim()) return null;
-      const q = query.trim();
+      if (!query) return null;
+      const q = query.trim().replace(/\s+/g, '');
+      if (!q) return null;
 
       try {
         if (type === 'roblox') {
@@ -765,7 +714,7 @@
             }
           }
           return {
-            name: `${q} (Unavailable)`,
+            name: `${q}`,
             count: 0,
             pfp: ''
           };
@@ -812,17 +761,12 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       DUAL-TIER POLLING ENGINE (HANDLES 10,000+ CHANNELS)
+       DUAL-TIER POLLING ENGINE
     ════════════════════════════════════════════════════════ */
-    async function updateTrackerData(t, data, now) {
+    function updateTrackerData(t, data, now) {
       if (!data) return;
       t.name = data.name;
-      if (data.pfp && data.pfp !== t.pfp) {
-        t.pfp = data.pfp;
-        extractColorFromImage(data.pfp, t.color).then(c => {
-          t.color = c;
-        });
-      }
+      if (data.pfp) t.pfp = data.pfp;
       if (t.initialCount === null) t.initialCount = data.count;
       t.currentCount = data.count;
       t.history.push({ t: now, v: data.count });
@@ -835,12 +779,10 @@
       isPolling = true;
       const now = Date.now();
 
-      // Top active visible bars
       const sorted = [...trackers].sort((a, b) => (b.targetGain || 0) - (a.targetGain || 0));
       const hotSlice = sorted.slice(0, Math.min(maxVisibleBars, 25));
 
       if (ytApiKey) {
-        // 50-ID Official Batch
         const ytIds = hotSlice.filter(t => t.type === 'youtube').map(t => t.query);
         const map = await fetchYouTubeBatchOfficial(ytIds, ytApiKey);
         hotSlice.forEach(t => {
@@ -849,14 +791,12 @@
           }
         });
       } else {
-        // Concurrent direct fetch
         await Promise.all(hotSlice.map(async (t) => {
           const data = await fetchSingleTarget(t.type, t.query);
           updateTrackerData(t, data, now);
         }));
       }
 
-      // Recompute gains
       for (const t of trackers) {
         t.targetGain = getRawGain(t, activeInterval, now);
         if (t.displayGain === undefined) t.displayGain = t.targetGain;
@@ -865,13 +805,12 @@
       isPolling = false;
     }
 
-    // Continuous Background Sweep Worker: Scans through full 10,000 pool
+    // Continuous Background Sweep Worker: Scans through full pool
     async function backgroundSweep() {
       if (trackers.length === 0) return;
       const now = Date.now();
 
       if (ytApiKey) {
-        // Batch 50 at a time
         const chunk = trackers.slice(bgSweepIndex, bgSweepIndex + 50);
         bgSweepIndex = (bgSweepIndex + 50) % Math.max(1, trackers.length);
         const ytIds = chunk.filter(t => t.type === 'youtube').map(t => t.query);
@@ -882,14 +821,13 @@
           }
         });
       } else {
-        // 10 channels per tick
         const unpolled = trackers.filter(t => t.currentCount === null);
         let chunk = [];
         if (unpolled.length > 0) {
           chunk = unpolled.slice(0, 10);
         } else {
-          chunk = trackers.slice(bgSweepIndex, bgSweepIndex + 10);
-          bgSweepIndex = (bgSweepIndex + 10) % Math.max(1, trackers.length);
+          chunk = trackers.slice(bgSweepIndex, bgSweepIndex + 8);
+          bgSweepIndex = (bgSweepIndex + 8) % Math.max(1, trackers.length);
         }
 
         await Promise.all(chunk.map(async (t) => {
@@ -909,7 +847,7 @@
       if (bgWorkerTimerId) clearInterval(bgWorkerTimerId);
 
       pollTimerId = setInterval(pollHotLeaders, Math.max(1, pollIntervalSec) * 1000);
-      bgWorkerTimerId = setInterval(backgroundSweep, 800); // Steady background stream
+      bgWorkerTimerId = setInterval(backgroundSweep, 700);
     }
 
     /* ════════════════════════════════════════════════════════
@@ -1064,7 +1002,7 @@
     ════════════════════════════════════════════════════════ */
     function parseLineToTracker(rawLine) {
       if (!rawLine) return null;
-      let line = rawLine.trim();
+      let line = rawLine.trim().replace(/\s+/g, '');
       if (!line || line.startsWith('#') || line.startsWith('//')) return null;
 
       line = line.replace(/^[",'\s]+|[",'\s]+$/g, '');
@@ -1304,7 +1242,7 @@
         const editedQueries = new Set();
         rows.forEach(r => {
           const type = r.querySelector('.m-type').value;
-          const query = r.querySelector('.m-query').value.trim();
+          const query = r.querySelector('.m-query').value.trim().replace(/\s+/g, '');
           if (query) {
             editedQueries.add(query);
             if (!trackers.some(t => t.query === query)) {
