@@ -1,0 +1,1740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gain-Graph | Realtime Gain Bar Analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Inter:wght@400;600;700;800&family=Outfit:wght@400;600;700&family=Montserrat:wght@400;600;700&family=Ubuntu:wght@400;700&family=Noto+Serif:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-main: #0a0c10;
+      --bg-card: rgba(18, 22, 31, 0.85);
+      --bg-card-border: rgba(255, 255, 255, 0.08);
+      --text-main: #ffffff;
+      --text-muted: #8e99a8;
+      --accent-pos: #00e676;
+      --accent-neg: #ff1744;
+      --accent-blue: #00b0ff;
+      --digit-h: 70px;
+      --digit-w-ratio: 0.58;
+      --sep-w-ratio: 0.24;
+      --odo-anim: 0.45s;
+      --bar-radius: 4px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      height: 100%;
+      overflow-y: auto !important;
+      overflow-x: hidden;
+    }
+
+    body {
+      background: var(--bg-main);
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      padding: 16px;
+      overflow-y: auto !important;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); }
+    ::-webkit-scrollbar-thumb { background: #2a3142; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3d475f; }
+
+    #app-container {
+      width: 100%;
+      max-width: 1320px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* ── Top Header Controls ── */
+    #top-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--bg-card-border);
+      padding: 10px 18px;
+      border-radius: 12px;
+      backdrop-filter: blur(12px);
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #00e676, #00b0ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-logo svg {
+      width: 26px;
+      height: 26px;
+      fill: url(#brand-grad);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+      user-select: none;
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: translateY(-1px);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #00b0ff, #0081cb);
+      border-color: #00b0ff;
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #29b6f6, #0288d1);
+      box-shadow: 0 4px 12px rgba(0, 176, 255, 0.35);
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #00e676, #00a854);
+      border-color: #00e676;
+      color: #000;
+      font-weight: 700;
+    }
+    .btn-success:hover {
+      background: linear-gradient(135deg, #33eb91, #00c853);
+      box-shadow: 0 4px 12px rgba(0, 230, 118, 0.35);
+    }
+
+    /* ── Trackers Container ── */
+    #trackers-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 16px;
+      width: 100%;
+    }
+
+    .tracker-card {
+      background: var(--bg-card);
+      border: 1px solid var(--bg-card-border);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    }
+
+    .tracker-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .tracker-tag {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(0, 176, 255, 0.15);
+      color: #00b0ff;
+      border: 1px solid rgba(0, 176, 255, 0.3);
+    }
+
+    .btn-remove-tracker {
+      background: transparent;
+      border: none;
+      color: #ff5252;
+      cursor: pointer;
+      font-size: 1.1rem;
+      padding: 4px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    .btn-remove-tracker:hover {
+      background: rgba(255, 82, 82, 0.15);
+    }
+
+    .tracker-inputs {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .tracker-inputs select,
+    .tracker-inputs input {
+      padding: 7px 10px;
+      font-size: 0.85rem;
+      background: #141824;
+      border: 1px solid #2b334a;
+      color: #fff;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    .tracker-inputs select {
+      flex: 1 1 140px;
+    }
+
+    .tracker-inputs input {
+      flex: 2 1 140px;
+    }
+
+    .tracker-banner-wrap {
+      width: 100%;
+      height: 90px;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #151a28;
+      position: relative;
+    }
+    .tracker-banner-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+
+    .tracker-profile-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: -32px;
+      padding-left: 10px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .tracker-pfp {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      border: 3px solid #12161f;
+      background: #202738;
+      object-fit: cover;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+
+    .tracker-name-box {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow: hidden;
+      margin-top: 24px;
+    }
+
+    .tracker-name {
+      font-size: 1.15rem;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #fff;
+    }
+
+    .tracker-sub-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* ── Odometer display inside tracker ── */
+    .tracker-odo-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 10px 0;
+      overflow: hidden;
+    }
+
+    .odometer-el {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: var(--digit-h);
+      overflow: hidden;
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum" 1;
+    }
+
+    .odo-digit {
+      width: calc(var(--digit-h) * var(--digit-w-ratio, 0.58));
+      height: var(--digit-h);
+      overflow: hidden;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .odo-strip {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      transition: top var(--odo-anim, 0.45s) cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    .odo-strip span {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: var(--digit-h);
+      font-size: calc(var(--digit-h) * 0.92);
+      font-weight: inherit;
+      line-height: 1;
+      color: #fff;
+    }
+
+    .odo-sep {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      width: calc(var(--digit-h) * var(--sep-w-ratio, 0.24));
+      height: var(--digit-h);
+      font-size: calc(var(--digit-h) * 0.92);
+      font-weight: inherit;
+      color: #fff;
+      padding-bottom: calc(var(--digit-h) * 0.05);
+      margin: 0 1px;
+      flex-shrink: 0;
+    }
+
+    /* ── Mini 4-Stat Gain Badges ── */
+    .mini-gains-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .mini-gain-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .mini-gain-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .mini-gain-value {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #fff;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .mini-gain-value.pos { color: var(--accent-pos); }
+    .mini-gain-value.neg { color: var(--accent-neg); }
+
+    /* ════════════════════════════════════════════════════════
+       THE 4 BAR GRAPHS SECTION
+    ════════════════════════════════════════════════════════ */
+    #graphs-section {
+      background: var(--bg-card);
+      border: 1px solid var(--bg-card-border);
+      border-radius: 14px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      backdrop-filter: blur(10px);
+    }
+
+    .graphs-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 12px;
+    }
+
+    .graphs-title-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .graphs-title-box h2 {
+      font-size: 1.15rem;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+    }
+
+    .view-mode-tabs {
+      display: flex;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 3px;
+      gap: 2px;
+    }
+
+    .tab-btn {
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .tab-btn.active {
+      background: #00b0ff;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(0, 176, 255, 0.4);
+    }
+
+    /* ── Bar Graphs Grid / Viewports ── */
+    #graphs-viewport-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      width: 100%;
+    }
+
+    #graphs-viewport-grid.view-single {
+      grid-template-columns: 1fr;
+    }
+    #graphs-viewport-grid.view-stacked {
+      grid-template-columns: 1fr;
+    }
+
+    .bar-chart-card {
+      background: #0e121a;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+    }
+
+    .bar-chart-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .chart-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .chart-badge-tag {
+      background: #1a2233;
+      border: 1px solid #2e3d5c;
+      color: #00e676;
+      font-size: 0.7rem;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+
+    .chart-curr-gain {
+      font-size: 0.95rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .canvas-container {
+      width: 100%;
+      height: 220px;
+      position: relative;
+      background: #07090e;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    #graphs-viewport-grid.view-single .canvas-container {
+      height: 380px;
+    }
+
+    canvas.bar-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* ════════════════════════════════════════════════════════
+       OPTIONS DRAWER
+    ════════════════════════════════════════════════════════ */
+    #options-drawer {
+      position: fixed;
+      top: 0;
+      right: -420px;
+      width: 400px;
+      max-width: 90vw;
+      height: 100vh;
+      background: #11151f;
+      border-left: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: -10px 0 30px rgba(0, 0, 0, 0.7);
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      transition: right 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+
+    #options-drawer.open {
+      right: 0;
+    }
+
+    .options-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .options-header h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .btn-close-options {
+      background: transparent;
+      border: none;
+      color: #aaa;
+      font-size: 1.3rem;
+      cursor: pointer;
+    }
+    .btn-close-options:hover { color: #fff; }
+
+    .options-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .opt-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .opt-group-title {
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: #00b0ff;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      border-bottom: 1px solid rgba(0, 176, 255, 0.2);
+      padding-bottom: 4px;
+    }
+
+    .opt-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 0.85rem;
+    }
+
+    .opt-row label {
+      color: #ccd6e0;
+      font-weight: 500;
+    }
+
+    .opt-row select,
+    .opt-row input[type="text"],
+    .opt-row input[type="number"] {
+      background: #182030;
+      border: 1px solid #2e3d5c;
+      color: #fff;
+      padding: 5px 8px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      outline: none;
+    }
+
+    .opt-row input[type="color"] {
+      width: 32px;
+      height: 28px;
+      border: 1px solid #333;
+      border-radius: 4px;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .opt-range-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .opt-range-wrap input[type="range"] {
+      width: 100px;
+      accent-color: #00b0ff;
+    }
+
+    .opt-range-wrap input[type="number"] {
+      width: 55px;
+      text-align: center;
+    }
+
+    /* ── OBS Mode Overlay ── */
+    body.obs-mode {
+      padding: 4px !important;
+      background: transparent !important;
+    }
+    body.obs-mode #top-nav,
+    body.obs-mode .tracker-inputs,
+    body.obs-mode .tracker-card-header,
+    body.obs-mode #options-drawer,
+    body.obs-mode .graphs-header {
+      display: none !important;
+    }
+
+    #exit-obs-btn {
+      display: none;
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      z-index: 999999;
+      background: rgba(14, 18, 26, 0.95);
+      border: 1px solid #00e676;
+      color: #00e676;
+      font-size: 12px;
+      font-weight: 800;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0, 230, 118, 0.3);
+    }
+
+    /* Toast */
+    #app-toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(18, 24, 38, 0.95);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.25s ease;
+      z-index: 9999999;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
+    #app-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    @media (max-width: 860px) {
+      #graphs-viewport-grid { grid-template-columns: 1fr; }
+      #trackers-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SVG Gradients -->
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <linearGradient id="brand-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#00e676" />
+        <stop offset="100%" stop-color="#00b0ff" />
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <div id="app-container">
+
+    <!-- ── Header & Navigation ── -->
+    <header id="top-nav">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24">
+          <path d="M4 9h4v11H4zm6-5h4v16h-4zm6 8h4v8h-4z"/>
+        </svg>
+        Gain-Graph
+      </div>
+      <div class="nav-actions">
+        <button class="btn btn-success" id="btn-add-tracker">＋ Add Tracker</button>
+        <button class="btn" id="btn-obs-toggle" title="Clean OBS Stream View">🎥 OBS Mode</button>
+        <button class="btn" id="btn-clear-history" title="Clear recorded graph history">🗑️ Reset Gains</button>
+        <button class="btn btn-primary" id="btn-open-options">⚙️ Options</button>
+      </div>
+    </header>
+
+    <!-- ── Trackers Grid ── -->
+    <section id="trackers-grid"></section>
+
+    <!-- ── 4 Gain Bar Graphs Section ── -->
+    <section id="graphs-section">
+      <div class="graphs-header">
+        <div class="graphs-title-box">
+          <h2>📊 Gain Bar Graphs (1s, 1m, 1h, 1d)</h2>
+        </div>
+        <div class="view-mode-tabs" id="view-mode-tabs">
+          <button class="tab-btn active" data-view="all">2x2 Grid View</button>
+          <button class="tab-btn" data-view="1s">1 Second</button>
+          <button class="tab-btn" data-view="1m">1 Minute</button>
+          <button class="tab-btn" data-view="1h">1 Hour</button>
+          <button class="tab-btn" data-view="1d">1 Day (24h)</button>
+        </div>
+      </div>
+
+      <div id="graphs-viewport-grid">
+        <!-- 1s Chart -->
+        <div class="bar-chart-card" id="chart-card-1s">
+          <div class="bar-chart-top">
+            <div class="chart-badge">
+              <span class="chart-badge-tag">1s</span>
+              <span>1-Second Rolling Gains</span>
+            </div>
+            <span class="chart-curr-gain" id="curr-gain-1s">+0</span>
+          </div>
+          <div class="canvas-container">
+            <canvas class="bar-canvas" id="canvas-1s"></canvas>
+          </div>
+        </div>
+
+        <!-- 1m Chart -->
+        <div class="bar-chart-card" id="chart-card-1m">
+          <div class="bar-chart-top">
+            <div class="chart-badge">
+              <span class="chart-badge-tag">1m</span>
+              <span>1-Minute Interval Gains</span>
+            </div>
+            <span class="chart-curr-gain" id="curr-gain-1m">+0</span>
+          </div>
+          <div class="canvas-container">
+            <canvas class="bar-canvas" id="canvas-1m"></canvas>
+          </div>
+        </div>
+
+        <!-- 1h Chart -->
+        <div class="bar-chart-card" id="chart-card-1h">
+          <div class="bar-chart-top">
+            <div class="chart-badge">
+              <span class="chart-badge-tag">1h</span>
+              <span>1-Hour Interval Gains</span>
+            </div>
+            <span class="chart-curr-gain" id="curr-gain-1h">+0</span>
+          </div>
+          <div class="canvas-container">
+            <canvas class="bar-canvas" id="canvas-1h"></canvas>
+          </div>
+        </div>
+
+        <!-- 1d Chart -->
+        <div class="bar-chart-card" id="chart-card-1d">
+          <div class="bar-chart-top">
+            <div class="chart-badge">
+              <span class="chart-badge-tag">1d</span>
+              <span>24-Hour Daily Gains</span>
+            </div>
+            <span class="chart-curr-gain" id="curr-gain-1d">+0</span>
+          </div>
+          <div class="canvas-container">
+            <canvas class="bar-canvas" id="canvas-1d"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /app-container -->
+
+  <!-- Floating Exit OBS Mode Button -->
+  <button id="exit-obs-btn">Exit OBS Mode (Esc)</button>
+
+  <!-- Options Drawer -->
+  <div id="options-drawer">
+    <div class="options-header">
+      <h3>⚙️ Gain-Graph Settings</h3>
+      <button class="btn-close-options" id="btn-close-options">&times;</button>
+    </div>
+    <div class="options-body">
+
+      <!-- Bar Graph Customization -->
+      <div class="opt-group">
+        <div class="opt-group-title">Bar Graph Customization</div>
+        <div class="opt-row">
+          <label>Visible Bars Count</label>
+          <div class="opt-range-wrap">
+            <input type="range" id="opt-bar-count" min="5" max="100" value="25" />
+            <input type="number" id="num-bar-count" min="5" max="100" value="25" />
+          </div>
+        </div>
+        <div class="opt-row">
+          <label>Bar Spacing / Gap</label>
+          <div class="opt-range-wrap">
+            <input type="range" id="opt-bar-gap" min="1" max="15" value="4" />
+            <input type="number" id="num-bar-gap" min="1" max="15" value="4" />
+          </div>
+        </div>
+        <div class="opt-row">
+          <label>Bar Corner Radius</label>
+          <div class="opt-range-wrap">
+            <input type="range" id="opt-bar-radius" min="0" max="16" value="4" />
+            <input type="number" id="num-bar-radius" min="0" max="16" value="4" />
+          </div>
+        </div>
+        <div class="opt-row">
+          <label>Bar Style Fill</label>
+          <select id="opt-bar-style">
+            <option value="solid" selected>Solid Fill</option>
+            <option value="gradient">Studio Gradient</option>
+            <option value="neon">Neon Glow</option>
+          </select>
+        </div>
+        <div class="opt-row">
+          <label>Show Value Labels</label>
+          <select id="opt-bar-labels">
+            <option value="show" selected>Always Show (+120)</option>
+            <option value="hover">Show on Hover Only</option>
+            <option value="hide">Hide Labels</option>
+          </select>
+        </div>
+        <div class="opt-row">
+          <label>Y-Axis Scaling</label>
+          <select id="opt-yaxis-mode">
+            <option value="stepped" selected>Stepped (Jumps on Reach)</option>
+            <option value="smooth">Continuous (Smooth)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Color Palette -->
+      <div class="opt-group">
+        <div class="opt-group-title">Color Palette</div>
+        <div class="opt-row">
+          <label>Positive Gain Color</label>
+          <input type="color" id="opt-color-pos" value="#00e676" />
+        </div>
+        <div class="opt-row">
+          <label>Negative Gain Color</label>
+          <input type="color" id="opt-color-neg" value="#ff1744" />
+        </div>
+        <div class="opt-row">
+          <label>Chart Canvas Background</label>
+          <input type="color" id="opt-color-canvas-bg" value="#07090e" />
+        </div>
+        <div class="opt-row">
+          <label>Grid & Baseline Color</label>
+          <input type="color" id="opt-color-grid" value="#242e42" />
+        </div>
+        <div class="opt-row">
+          <label>Page Background</label>
+          <input type="color" id="opt-color-page-bg" value="#0a0c10" />
+        </div>
+      </div>
+
+      <!-- Odometer & Font -->
+      <div class="opt-group">
+        <div class="opt-group-title">Odometer & Numbers</div>
+        <div class="opt-row">
+          <label>Font Family</label>
+          <select id="opt-font">
+            <option value="'Roboto', sans-serif" selected>Roboto (SocialBlade)</option>
+            <option value="'Roboto-Light', 'Roboto', sans-serif">YouTube Realtime (Akshat Mittal)</option>
+            <option value="'Inter', sans-serif">Inter (Modern Clean)</option>
+            <option value="'Outfit', sans-serif">Outfit (Premium Rounded)</option>
+            <option value="'Montserrat', sans-serif">Montserrat (Geometric)</option>
+            <option value="'Noto Serif', serif">Noto Serif (Classic)</option>
+            <option value="'Share Tech Mono', monospace">Share Tech Mono (Cyber)</option>
+          </select>
+        </div>
+        <div class="opt-row">
+          <label>Odometer Digit Color</label>
+          <input type="color" id="opt-color-odo" value="#ffffff" />
+        </div>
+        <div class="opt-row">
+          <label>Odometer Size</label>
+          <div class="opt-range-wrap">
+            <input type="range" id="opt-odo-size" min="40" max="140" value="70" />
+            <input type="number" id="num-odo-size" min="40" max="140" value="70" />
+          </div>
+        </div>
+        <div class="opt-row">
+          <label>Update Refresh Rate</label>
+          <div class="opt-range-wrap">
+            <input type="range" id="opt-refresh-rate" min="1" max="15" value="2" />
+            <input type="number" id="num-refresh-rate" min="1" max="15" value="2" />
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 14px 0 4px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid rgba(255,255,255,0.08);">
+        Gain-Graph • Live Realtime Analytics • <strong style="color:#00e676;">v1.0.0</strong>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ════════════════════════════════════════════════════════
+       SHARED STATE & CONSTANTS
+    ════════════════════════════════════════════════════════ */
+    const CYCLES = 5;
+    const CYCLE_LEN = 10;
+    let digitH = 70;
+    let fetchIntervalMs = 2000;
+    let visibleBarsCount = 25;
+    let barGapPx = 4;
+    let barRadiusPx = 4;
+    let barStyleMode = 'solid';
+    let barLabelMode = 'show';
+    let yAxisMode = 'stepped';
+
+    // Rolling Gain History Storage (1s, 1m, 1h, 1d)
+    let gainHistory = {
+      '1s': [],
+      '1m': [],
+      '1h': [],
+      '1d': []
+    };
+
+    let trackers = [];
+    let nextTrackerId = 1;
+
+    /* ════════════════════════════════════════════════════════
+       ODOMETER COMPONENT FACTORY
+    ════════════════════════════════════════════════════════ */
+    function createOdometer(odoEl) {
+      let columns = [];
+      let colPositions = [];
+
+      function buildOdometer(digitCount) {
+        odoEl.innerHTML = '';
+        columns = [];
+        colPositions = [];
+
+        for (let i = 0; i < digitCount; i++) {
+          const fromRight = digitCount - 1 - i;
+          const col = document.createElement('div');
+          col.className = 'odo-digit';
+
+          const strip = document.createElement('div');
+          strip.className = 'odo-strip';
+          strip.style.transition = 'none';
+
+          for (let c = 0; c < CYCLES; c++) {
+            for (let d = 0; d < CYCLE_LEN; d++) {
+              const s = document.createElement('span');
+              s.textContent = d;
+              strip.appendChild(s);
+            }
+          }
+
+          col.appendChild(strip);
+          odoEl.appendChild(col);
+          columns.push({ col, strip });
+
+          if (fromRight > 0 && fromRight % 3 === 0) {
+            const sep = document.createElement('div');
+            sep.className = 'odo-sep';
+            sep.textContent = ',';
+            odoEl.appendChild(sep);
+          }
+        }
+        applyDigitColor();
+        applyFont(document.getElementById('opt-font')?.value || "'Roboto', sans-serif");
+      }
+
+      function setOdometer(newValue, oldValue) {
+        if (newValue === null || newValue === undefined || isNaN(newValue)) return;
+        const newStr = String(Math.floor(newValue));
+        if (newStr.length === 0) return;
+
+        const initCenter = 2 * CYCLE_LEN;
+        const newDigits = newStr.split('').map(Number);
+
+        if (oldValue === null || oldValue === undefined || isNaN(oldValue)) {
+          buildOdometer(newDigits.length);
+          newDigits.forEach((d, i) => {
+            const initPos = initCenter + d;
+            colPositions[i] = initPos;
+            columns[i].strip.style.transition = 'none';
+            columns[i].strip.style.top = `-${initPos * digitH}px`;
+          });
+          odoEl.offsetHeight;
+          return;
+        }
+
+        const oldStr = String(Math.floor(oldValue));
+        const maxLen = Math.max(newDigits.length, oldStr.length);
+        const paddedOld = oldStr.padStart(maxLen, '0');
+        const paddedNew = newStr.padStart(maxLen, '0');
+
+        const oldDigits = paddedOld.split('').map(Number);
+        const animNewDigits = paddedNew.split('').map(Number);
+
+        if (columns.length !== maxLen) {
+          buildOdometer(maxLen);
+          oldDigits.forEach((d, i) => {
+            const initPos = initCenter + d;
+            colPositions[i] = initPos;
+            columns[i].strip.style.transition = 'none';
+            columns[i].strip.style.top = `-${initPos * digitH}px`;
+          });
+          odoEl.offsetHeight;
+        }
+
+        animNewDigits.forEach((d, i) => {
+          const { strip } = columns[i];
+          const oldAbsPos = colPositions[i];
+          const oldDigit = oldAbsPos % CYCLE_LEN;
+          let delta = d - oldDigit;
+
+          if (newValue > oldValue && delta < 0) delta += 10;
+          else if (newValue < oldValue && delta > 0) delta -= 10;
+
+          const newAbsPos = oldAbsPos + delta;
+          colPositions[i] = newAbsPos;
+          strip.style.transition = `top var(--odo-anim, 0.45s) cubic-bezier(0.25, 0.46, 0.45, 0.94)`;
+          strip.style.top = `-${newAbsPos * digitH}px`;
+        });
+      }
+
+      function applyDigitColor(color) {
+        const c = color || document.getElementById('opt-color-odo')?.value || '#ffffff';
+        odoEl.querySelectorAll('.odo-strip span, .odo-sep').forEach(el => { el.style.color = c; });
+      }
+
+      function applyFont(font) {
+        const isYtRealtime = font.includes('Roboto-Light');
+        const weight = isYtRealtime ? '300' : '700';
+        const cleanFont = font.replace("'Roboto-Light', ", "");
+        const digitW = isYtRealtime ? 'calc(var(--digit-h) * 0.48)' : 'calc(var(--digit-h) * 0.58)';
+
+        odoEl.style.fontFamily = cleanFont;
+        odoEl.style.fontWeight = weight;
+
+        odoEl.querySelectorAll('.odo-digit').forEach(el => { el.style.width = digitW; });
+        odoEl.querySelectorAll('.odo-sep').forEach(el => {
+          el.style.width = isYtRealtime ? 'auto' : 'calc(var(--digit-h) * 0.24)';
+          el.style.margin = isYtRealtime ? '0 3px' : '0 1px';
+          el.style.paddingBottom = isYtRealtime ? '0px' : 'calc(var(--digit-h) * 0.05)';
+          el.style.transform = isYtRealtime ? 'translateY(6px)' : 'none';
+          el.style.fontFamily = cleanFont;
+          el.style.fontWeight = weight;
+        });
+        odoEl.querySelectorAll('.odo-strip span').forEach(el => {
+          el.style.fontFamily = cleanFont;
+          el.style.fontWeight = weight;
+        });
+      }
+
+      return { buildOdometer, setOdometer, applyDigitColor, applyFont };
+    }
+
+    /* ════════════════════════════════════════════════════════
+       API FETCH ENGINE
+    ════════════════════════════════════════════════════════ */
+    async function fetchTrackerData(type, query) {
+      if (!query || !query.trim()) return null;
+      const q = query.trim();
+
+      try {
+        if (type === 'roblox') {
+          const res = await fetch(`https://groups.roblox.com/v1/groups/${q}`);
+          if (!res.ok) return null;
+          const data = await res.json();
+          let iconUrl = '';
+          try {
+            const iconRes = await fetch(`https://thumbnails.roblox.com/v1/groups/icons?groupIds=${q}&size=150x150&format=Png&isCircular=false`);
+            const iconData = await iconRes.json();
+            iconUrl = iconData?.data?.[0]?.imageUrl || '';
+          } catch(e) {}
+          return {
+            name: data.name || `Group ${q}`,
+            count: data.memberCount || 0,
+            pfp: iconUrl,
+            banner: ''
+          };
+        }
+
+        if (type === 'roblox-game-visits' || type === 'roblox-game-players') {
+          const res = await fetch(`https://mixerno.space/api/roblox-game-counter/user/${q}`);
+          if (!res.ok) return null;
+          const data = await res.json();
+          const visits = data?.counts?.[0]?.count ?? data?.counts?.find(c => c.value === 'visits')?.count ?? 0;
+          const players = data?.counts?.[1]?.count ?? data?.counts?.find(c => c.value === 'playing')?.count ?? 0;
+          return {
+            name: data?.user?.[0]?.count || `Roblox Game ${q}`,
+            count: type === 'roblox-game-visits' ? visits : players,
+            pfp: data?.user?.[1]?.count || '',
+            banner: data?.user?.[2]?.count || ''
+          };
+        }
+
+        if (type === 'youtube') {
+          const res = await fetch(`https://mixerno.space/api/youtube-channel-counter/user/${q}`);
+          if (!res.ok) return null;
+          const data = await res.json();
+          return {
+            name: data?.user?.[0]?.count || `Channel ${q}`,
+            count: data?.counts?.[0]?.count || 0,
+            pfp: data?.user?.[1]?.count || '',
+            banner: data?.user?.[2]?.count || ''
+          };
+        }
+
+        if (type === 'youtube-sctools') {
+          const res = await fetch(`https://api.subscribercounter.nl/api/youtube-view-counter/${q}/data`);
+          if (!res.ok) return null;
+          const data = await res.json();
+          return {
+            name: data?.channelName || `Channel ${q}`,
+            count: data?.subCount || 0,
+            pfp: data?.channelAvatar || '',
+            banner: data?.channelBanner || ''
+          };
+        }
+
+        if (type === 'tiktok' || type === 'twitter' || type === 'instagram') {
+          const res = await fetch(`https://mixerno.space/api/${type}-user-counter/user/${q}`);
+          if (!res.ok) return null;
+          const data = await res.json();
+          return {
+            name: data?.user?.[0]?.count || `@${q}`,
+            count: data?.counts?.[0]?.count || 0,
+            pfp: data?.user?.[1]?.count || '',
+            banner: data?.user?.[2]?.count || ''
+          };
+        }
+      } catch (err) {
+        console.error('Fetch error:', err);
+      }
+      return null;
+    }
+
+    /* ════════════════════════════════════════════════════════
+       TRACKER INSTANCE FACTORY
+    ════════════════════════════════════════════════════════ */
+    function createTrackerCard(initialType = 'youtube', initialQuery = 'UCBJycsmduvYEL83R_U4JriQ') {
+      const id = nextTrackerId++;
+      const card = document.createElement('div');
+      card.className = 'tracker-card';
+      card.id = `tracker-${id}`;
+
+      card.innerHTML = `
+        <div class="tracker-card-header">
+          <span class="tracker-tag">Tracker #${id}</span>
+          <button class="btn-remove-tracker" title="Remove Tracker">&times;</button>
+        </div>
+        <div class="tracker-inputs">
+          <select class="tracker-type">
+            <option value="youtube" ${initialType==='youtube'?'selected':''}>YouTube (Mixerno)</option>
+            <option value="youtube-sctools" ${initialType==='youtube-sctools'?'selected':''}>YouTube (SCTools)</option>
+            <option value="roblox" ${initialType==='roblox'?'selected':''}>Roblox Group</option>
+            <option value="roblox-game-visits" ${initialType==='roblox-game-visits'?'selected':''}>Roblox Game (Visits)</option>
+            <option value="roblox-game-players" ${initialType==='roblox-game-players'?'selected':''}>Roblox Game (Players)</option>
+            <option value="tiktok" ${initialType==='tiktok'?'selected':''}>TikTok</option>
+            <option value="twitter" ${initialType==='twitter'?'selected':''}>Twitter</option>
+            <option value="instagram" ${initialType==='instagram'?'selected':''}>Instagram</option>
+          </select>
+          <input type="text" class="tracker-query" placeholder="ID or Username" value="${initialQuery}" />
+          <button class="btn btn-primary tracker-btn-track">Track</button>
+        </div>
+        <div class="tracker-banner-wrap"><img class="tracker-banner-img" src="" alt="banner" /></div>
+        <div class="tracker-profile-row">
+          <img class="tracker-pfp" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%231e293b'/%3E%3C/svg%3E" alt="pfp" />
+          <div class="tracker-name-box">
+            <div class="tracker-name">Loading...</div>
+            <div class="tracker-sub-label">Live Count</div>
+          </div>
+        </div>
+        <div class="tracker-odo-wrap">
+          <div class="odometer-el"></div>
+        </div>
+        <div class="mini-gains-row">
+          <div class="mini-gain-col"><span class="mini-gain-label">1s</span><span class="mini-gain-value gain-1s">+0</span></div>
+          <div class="mini-gain-col"><span class="mini-gain-label">1m</span><span class="mini-gain-value gain-1m">+0</span></div>
+          <div class="mini-gain-col"><span class="mini-gain-label">1h</span><span class="mini-gain-value gain-1h">+0</span></div>
+          <div class="mini-gain-col"><span class="mini-gain-label">1d</span><span class="mini-gain-value gain-1d">+0</span></div>
+        </div>
+      `;
+
+      document.getElementById('trackers-grid').appendChild(card);
+
+      const odo = createOdometer(card.querySelector('.odometer-el'));
+      const typeSelect = card.querySelector('.tracker-type');
+      const queryInput = card.querySelector('.tracker-query');
+      const trackBtn = card.querySelector('.tracker-btn-track');
+      const removeBtn = card.querySelector('.btn-remove-tracker');
+      const bannerImg = card.querySelector('.tracker-banner-img');
+      const pfpImg = card.querySelector('.tracker-pfp');
+      const nameEl = card.querySelector('.tracker-name');
+
+      let currCount = null;
+      let prevCount = null;
+      let historySnapshots = []; // { t: timestamp, v: count }
+      let timer = null;
+
+      async function tick() {
+        const data = await fetchTrackerData(typeSelect.value, queryInput.value);
+        if (!data) return;
+
+        nameEl.textContent = data.name;
+        if (data.pfp) pfpImg.src = data.pfp;
+        if (data.banner) {
+          bannerImg.src = data.banner;
+          bannerImg.style.display = 'block';
+        } else {
+          bannerImg.style.display = 'none';
+        }
+
+        const now = Date.now();
+        const count = data.count;
+
+        if (currCount !== null && currCount !== count) {
+          prevCount = currCount;
+        }
+        currCount = count;
+        odo.setOdometer(currCount, prevCount);
+
+        historySnapshots.push({ t: now, v: count });
+        if (historySnapshots.length > 28000) historySnapshots.shift();
+
+        updateGains(now);
+      }
+
+      function updateGains(now) {
+        function getGain(windowMs) {
+          if (historySnapshots.length < 2) return 0;
+          const targetTime = now - windowMs;
+          let baseVal = historySnapshots[0].v;
+          for (let i = historySnapshots.length - 1; i >= 0; i--) {
+            if (historySnapshots[i].t <= targetTime) {
+              baseVal = historySnapshots[i].v;
+              break;
+            }
+          }
+          return currCount - baseVal;
+        }
+
+        const g1s = historySnapshots.length >= 2 ? (currCount - historySnapshots[historySnapshots.length - 2].v) : 0;
+        const g1m = getGain(60 * 1000);
+        const g1h = getGain(60 * 60 * 1000);
+        const g1d = getGain(24 * 60 * 60 * 1000);
+
+        function formatGain(n) {
+          const sign = n > 0 ? '+' : (n < 0 ? '-' : '+');
+          const abs = Math.abs(n);
+          if (abs >= 1e9) return sign + (abs / 1e9).toFixed(2) + 'B';
+          if (abs >= 1e6) return sign + (abs / 1e6).toFixed(2) + 'M';
+          if (abs >= 1e3) return sign + (abs / 1e3).toFixed(1) + 'K';
+          return sign + abs.toLocaleString();
+        }
+
+        function setGainEl(selector, val) {
+          const el = card.querySelector(selector);
+          if (!el) return;
+          el.textContent = formatGain(val);
+          el.className = 'mini-gain-value ' + (val > 0 ? 'pos' : (val < 0 ? 'neg' : ''));
+        }
+
+        setGainEl('.gain-1s', g1s);
+        setGainEl('.gain-1m', g1m);
+        setGainEl('.gain-1h', g1h);
+        setGainEl('.gain-1d', g1d);
+
+        // Record into central gain bar graph history
+        recordGainBar('1s', g1s, now, id, nameEl.textContent);
+        recordGainBar('1m', g1m, now, id, nameEl.textContent);
+        recordGainBar('1h', g1h, now, id, nameEl.textContent);
+        recordGainBar('1d', g1d, now, id, nameEl.textContent);
+
+        renderAllBarCharts();
+      }
+
+      function start() {
+        if (timer) clearInterval(timer);
+        tick();
+        timer = setInterval(tick, fetchIntervalMs);
+      }
+
+      trackBtn.addEventListener('click', start);
+      queryInput.addEventListener('keydown', e => { if (e.key === 'Enter') start(); });
+
+      removeBtn.addEventListener('click', () => {
+        if (trackers.length <= 1) {
+          showToast('Must keep at least 1 tracker active!');
+          return;
+        }
+        if (timer) clearInterval(timer);
+        card.remove();
+        trackers = trackers.filter(t => t.id !== id);
+        saveAppState();
+      });
+
+      const trackerObj = {
+        id,
+        card,
+        odo,
+        start,
+        getHistory: () => historySnapshots,
+        setHistory: (h) => { historySnapshots = h; },
+        getData: () => ({ type: typeSelect.value, query: queryInput.value })
+      };
+
+      trackers.push(trackerObj);
+      start();
+      return trackerObj;
+    }
+
+    /* ════════════════════════════════════════════════════════
+       CENTRAL GAIN BAR DATA RECORDER
+    ════════════════════════════════════════════════════════ */
+    function recordGainBar(intervalType, gainValue, timestamp, trackerId, trackerName) {
+      const arr = gainHistory[intervalType];
+      const last = arr[arr.length - 1];
+
+      const bucketThreshold = intervalType === '1s' ? 1000 : (intervalType === '1m' ? 3000 : (intervalType === '1h' ? 30000 : 60000));
+      if (last && (timestamp - last.t) < bucketThreshold) {
+        last.v = gainValue;
+        last.trackerId = trackerId;
+        last.name = trackerName;
+      } else {
+        arr.push({
+          t: timestamp,
+          v: gainValue,
+          trackerId: trackerId,
+          name: trackerName
+        });
+        if (arr.length > 200) arr.shift();
+      }
+
+      const currBadge = document.getElementById(`curr-gain-${intervalType}`);
+      if (currBadge) {
+        const sign = gainValue > 0 ? '+' : (gainValue < 0 ? '-' : '+');
+        currBadge.textContent = sign + Math.abs(gainValue).toLocaleString();
+        currBadge.style.color = gainValue > 0 ? 'var(--accent-pos)' : (gainValue < 0 ? 'var(--accent-neg)' : '#ffffff');
+      }
+    }
+
+    /* ════════════════════════════════════════════════════════
+       HIGH-PERFORMANCE CANVAS BAR GRAPH RENDERER
+    ════════════════════════════════════════════════════════ */
+    function drawBarChart(canvasId, intervalType) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width = canvas.offsetWidth;
+      const H = canvas.height = canvas.offsetHeight;
+
+      const bgCanvasColor = document.getElementById('opt-color-canvas-bg')?.value || '#07090e';
+      const gridColor = document.getElementById('opt-color-grid')?.value || '#242e42';
+      const posColor = document.getElementById('opt-color-pos')?.value || '#00e676';
+      const negColor = document.getElementById('opt-color-neg')?.value || '#ff1744';
+
+      ctx.fillStyle = bgCanvasColor;
+      ctx.fillRect(0, 0, W, H);
+
+      const arr = gainHistory[intervalType] || [];
+      const slice = arr.slice(-visibleBarsCount);
+
+      if (slice.length === 0) {
+        ctx.fillStyle = '#475569';
+        ctx.font = '12px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Waiting for live gain samples...', W / 2, H / 2);
+        return;
+      }
+
+      const vals = slice.map(p => p.v);
+      const minVal = Math.min(0, ...vals);
+      const maxVal = Math.max(0, ...vals);
+
+      let min = minVal;
+      let max = maxVal;
+
+      if (yAxisMode === 'stepped') {
+        const diff = Math.max(1, maxVal - minVal);
+        const exponent = Math.floor(Math.log10(diff));
+        let step = Math.pow(10, exponent);
+        if (diff / step <= 2) step /= 2;
+        else if (diff / step >= 5) step *= 2;
+        if (step < 1) step = 1;
+
+        min = Math.floor(minVal / step) * step;
+        max = Math.ceil(maxVal / step) * step;
+        if (max === min) max = min + step;
+      } else {
+        const pad = (maxVal - minVal) * 0.1 || 1;
+        min = minVal - pad;
+        max = maxVal + pad;
+      }
+
+      const range = max - min || 1;
+
+      const padL = 45;
+      const padR = 15;
+      const padT = 20;
+      const padB = 25;
+      const gW = W - padL - padR;
+      const gH = H - padT - padB;
+
+      // Zero baseline Y
+      const zeroY = padT + gH - ((0 - min) / range) * gH;
+
+      // Draw Grid & Y-Axis ticks
+      ctx.strokeStyle = gridColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+
+      const stepsCount = 4;
+      for (let i = 0; i <= stepsCount; i++) {
+        const y = padT + (gH / stepsCount) * i;
+        ctx.moveTo(padL, y);
+        ctx.lineTo(W - padR, y);
+
+        const tickVal = Math.round(max - (range / stepsCount) * i);
+        ctx.fillStyle = '#64748b';
+        ctx.font = '10px Inter, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText((tickVal > 0 ? '+' : '') + tickVal.toLocaleString(), padL - 8, y + 3);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Draw Zero Baseline Line
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(padL, zeroY);
+      ctx.lineTo(W - padR, zeroY);
+      ctx.stroke();
+
+      // Render Bars
+      const count = slice.length;
+      const slotWidth = gW / Math.max(1, count);
+      const barW = Math.max(2, slotWidth - barGapPx);
+
+      slice.forEach((p, i) => {
+        const x = padL + i * slotWidth + (slotWidth - barW) / 2;
+        const valY = padT + gH - ((p.v - min) / range) * gH;
+        const isPos = p.v >= 0;
+        const barH = Math.max(2, Math.abs(valY - zeroY));
+        const topY = isPos ? valY : zeroY;
+
+        ctx.fillStyle = isPos ? posColor : negColor;
+
+        if (barStyleMode === 'gradient') {
+          const grad = ctx.createLinearGradient(0, topY, 0, topY + barH);
+          if (isPos) {
+            grad.addColorStop(0, posColor);
+            grad.addColorStop(1, posColor + '55');
+          } else {
+            grad.addColorStop(0, negColor + '55');
+            grad.addColorStop(1, negColor);
+          }
+          ctx.fillStyle = grad;
+        }
+
+        // Rounded Bar
+        if (barRadiusPx > 0 && typeof ctx.roundRect === 'function') {
+          ctx.beginPath();
+          ctx.roundRect(x, topY, barW, barH, [isPos ? barRadiusPx : 0, isPos ? barRadiusPx : 0, !isPos ? barRadiusPx : 0, !isPos ? barRadiusPx : 0]);
+          ctx.fill();
+        } else {
+          ctx.fillRect(x, topY, barW, barH);
+        }
+
+        // Value Label on top of bar
+        if (barLabelMode === 'show' && barW >= 12) {
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 9px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          const labelText = (p.v > 0 ? '+' : '') + (Math.abs(p.v) >= 1000 ? (p.v/1000).toFixed(1)+'K' : p.v);
+          const labelY = isPos ? topY - 4 : topY + barH + 10;
+          ctx.fillText(labelText, x + barW / 2, labelY);
+        }
+
+        // Time on X-Axis
+        if (i % Math.max(1, Math.floor(count / 5)) === 0 || i === count - 1) {
+          const d = new Date(p.t);
+          const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: intervalType === '1s' ? '2-digit' : undefined });
+          ctx.fillStyle = '#64748b';
+          ctx.font = '9px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(timeStr, x + barW / 2, H - 6);
+        }
+      });
+    }
+
+    function renderAllBarCharts() {
+      drawBarChart('canvas-1s', '1s');
+      drawBarChart('canvas-1m', '1m');
+      drawBarChart('canvas-1h', '1h');
+      drawBarChart('canvas-1d', '1d');
+    }
+
+    /* ════════════════════════════════════════════════════════
+       UI INTERACTIONS & OPTIONS BINDINGS
+    ════════════════════════════════════════════════════════ */
+    function showToast(msg) {
+      let t = document.getElementById('app-toast');
+      if (!t) {
+        t = document.createElement('div');
+        t.id = 'app-toast';
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.classList.add('show');
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    // View Mode Tabs (Grid vs 1s vs 1m vs 1h vs 1d)
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const view = btn.dataset.view;
+        const grid = document.getElementById('graphs-viewport-grid');
+
+        if (view === 'all') {
+          grid.className = '';
+          document.querySelectorAll('.bar-chart-card').forEach(c => c.style.display = '');
+        } else {
+          grid.className = 'view-single';
+          document.querySelectorAll('.bar-chart-card').forEach(c => {
+            c.style.display = c.id === `chart-card-${view}` ? '' : 'none';
+          });
+        }
+        renderAllBarCharts();
+      });
+    });
+
+    // Options Drawer
+    const drawer = document.getElementById('options-drawer');
+    document.getElementById('btn-open-options').addEventListener('click', () => drawer.classList.add('open'));
+    document.getElementById('btn-close-options').addEventListener('click', () => { drawer.classList.remove('open'); saveAppState(); });
+
+    // Slider + Number Link helper
+    function linkSliderNum(sliderId, numId, min, max, cb) {
+      const s = document.getElementById(sliderId);
+      const n = document.getElementById(numId);
+      if (!s || !n) return;
+      s.addEventListener('input', () => { n.value = s.value; cb(parseFloat(s.value)); });
+      n.addEventListener('input', () => { s.value = n.value; cb(parseFloat(n.value)); });
+    }
+
+    linkSliderNum('opt-bar-count', 'num-bar-count', 5, 100, v => { visibleBarsCount = v; renderAllBarCharts(); });
+    linkSliderNum('opt-bar-gap', 'num-bar-gap', 1, 15, v => { barGapPx = v; renderAllBarCharts(); });
+    linkSliderNum('opt-bar-radius', 'num-bar-radius', 0, 16, v => { barRadiusPx = v; renderAllBarCharts(); });
+    linkSliderNum('opt-odo-size', 'num-odo-size', 40, 140, v => {
+      digitH = v;
+      document.documentElement.style.setProperty('--digit-h', v + 'px');
+      trackers.forEach(t => t.odo.buildOdometer(8));
+    });
+    linkSliderNum('opt-refresh-rate', 'num-refresh-rate', 1, 15, v => {
+      fetchIntervalMs = v * 1000;
+      trackers.forEach(t => t.start());
+    });
+
+    document.getElementById('opt-bar-style').addEventListener('change', e => { barStyleMode = e.target.value; renderAllBarCharts(); });
+    document.getElementById('opt-bar-labels').addEventListener('change', e => { barLabelMode = e.target.value; renderAllBarCharts(); });
+    document.getElementById('opt-yaxis-mode').addEventListener('change', e => { yAxisMode = e.target.value; renderAllBarCharts(); });
+
+    // Color Pickers
+    ['opt-color-pos', 'opt-color-neg', 'opt-color-canvas-bg', 'opt-color-grid'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', renderAllBarCharts);
+    });
+
+    document.getElementById('opt-color-page-bg')?.addEventListener('input', e => {
+      document.body.style.background = e.target.value;
+    });
+
+    document.getElementById('opt-color-odo')?.addEventListener('input', e => {
+      trackers.forEach(t => t.odo.applyDigitColor(e.target.value));
+    });
+
+    document.getElementById('opt-font')?.addEventListener('change', e => {
+      trackers.forEach(t => t.odo.applyFont(e.target.value));
+    });
+
+    // Reset Gains
+    document.getElementById('btn-clear-history').addEventListener('click', () => {
+      gainHistory = { '1s': [], '1m': [], '1h': [], '1d': [] };
+      renderAllBarCharts();
+      showToast('Gain graph history cleared!');
+    });
+
+    // Add Tracker Button
+    document.getElementById('btn-add-tracker').addEventListener('click', () => {
+      createTrackerCard('youtube', '');
+      showToast('New tracker added!');
+    });
+
+    // OBS Mode
+    function toggleObsMode(enable) {
+      const isObs = enable !== undefined ? enable : !document.body.classList.contains('obs-mode');
+      document.body.classList.toggle('obs-mode', isObs);
+      document.getElementById('exit-obs-btn').style.display = isObs ? 'block' : 'none';
+    }
+
+    document.getElementById('btn-obs-toggle').addEventListener('click', () => toggleObsMode(true));
+    document.getElementById('exit-obs-btn').addEventListener('click', () => toggleObsMode(false));
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && document.body.classList.contains('obs-mode')) {
+        toggleObsMode(false);
+      }
+    });
+
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('obs') === 'true' || urlParams.get('clean') === 'true') {
+      toggleObsMode(true);
+    }
+
+    /* ════════════════════════════════════════════════════════
+       PERSISTENCE (localStorage)
+    ════════════════════════════════════════════════════════ */
+    function saveAppState() {
+      try {
+        const state = {
+          trackers: trackers.map(t => t.getData()),
+          options: {
+            barCount: visibleBarsCount,
+            barGap: barGapPx,
+            barRadius: barRadiusPx,
+            barStyle: barStyleMode,
+            barLabels: barLabelMode,
+            yAxisMode: yAxisMode,
+            colorPos: document.getElementById('opt-color-pos')?.value,
+            colorNeg: document.getElementById('opt-color-neg')?.value,
+            colorCanvasBg: document.getElementById('opt-color-canvas-bg')?.value,
+            colorGrid: document.getElementById('opt-color-grid')?.value,
+            colorPageBg: document.getElementById('opt-color-page-bg')?.value,
+            colorOdo: document.getElementById('opt-color-odo')?.value,
+            font: document.getElementById('opt-font')?.value,
+            odoSize: digitH,
+            refreshRate: fetchIntervalMs / 1000
+          }
+        };
+        localStorage.setItem('gain_graph_state_v1', JSON.stringify(state));
+      } catch (e) {}
+    }
+
+    function loadAppState() {
+      try {
+        const raw = localStorage.getItem('gain_graph_state_v1');
+        if (!raw) {
+          createTrackerCard('youtube', 'UCBJycsmduvYEL83R_U4JriQ'); // Marques Brownlee default
+          return;
+        }
+        const state = JSON.parse(raw);
+        if (state.trackers && state.trackers.length > 0) {
+          state.trackers.forEach(t => createTrackerCard(t.type, t.query));
+        } else {
+          createTrackerCard('youtube', 'UCBJycsmduvYEL83R_U4JriQ');
+        }
+
+        if (state.options) {
+          const o = state.options;
+          if (o.barCount) { visibleBarsCount = o.barCount; document.getElementById('opt-bar-count').value = o.barCount; document.getElementById('num-bar-count').value = o.barCount; }
+          if (o.barGap) { barGapPx = o.barGap; document.getElementById('opt-bar-gap').value = o.barGap; document.getElementById('num-bar-gap').value = o.barGap; }
+          if (o.barRadius) { barRadiusPx = o.barRadius; document.getElementById('opt-bar-radius').value = o.barRadius; document.getElementById('num-bar-radius').value = o.barRadius; }
+          if (o.barStyle) { barStyleMode = o.barStyle; document.getElementById('opt-bar-style').value = o.barStyle; }
+          if (o.barLabels) { barLabelMode = o.barLabels; document.getElementById('opt-bar-labels').value = o.barLabels; }
+          if (o.yAxisMode) { yAxisMode = o.yAxisMode; document.getElementById('opt-yaxis-mode').value = o.yAxisMode; }
+          if (o.colorPos) document.getElementById('opt-color-pos').value = o.colorPos;
+          if (o.colorNeg) document.getElementById('opt-color-neg').value = o.colorNeg;
+          if (o.colorCanvasBg) document.getElementById('opt-color-canvas-bg').value = o.colorCanvasBg;
+          if (o.colorGrid) document.getElementById('opt-color-grid').value = o.colorGrid;
+          if (o.colorPageBg) { document.getElementById('opt-color-page-bg').value = o.colorPageBg; document.body.style.background = o.colorPageBg; }
+          if (o.colorOdo) document.getElementById('opt-color-odo').value = o.colorOdo;
+          if (o.font) document.getElementById('opt-font').value = o.font;
+          if (o.odoSize) {
+            digitH = o.odoSize;
+            document.documentElement.style.setProperty('--digit-h', digitH + 'px');
+            document.getElementById('opt-odo-size').value = digitH;
+            document.getElementById('num-odo-size').value = digitH;
+          }
+          if (o.refreshRate) {
+            fetchIntervalMs = o.refreshRate * 1000;
+            document.getElementById('opt-refresh-rate').value = o.refreshRate;
+            document.getElementById('num-refresh-rate').value = o.refreshRate;
+          }
+        }
+      } catch (e) {
+        createTrackerCard('youtube', 'UCBJycsmduvYEL83R_U4JriQ');
+      }
+    }
+
+    window.addEventListener('resize', renderAllBarCharts);
+    window.addEventListener('beforeunload', saveAppState);
+
+    // Initial Launch
+    loadAppState();
+    renderAllBarCharts();
+  </script>
+</body>
+</html>
