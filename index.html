@@ -720,7 +720,7 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       API FETCHER (WITH MULTI-TIER FALLBACKS & ROBLOX NAME RESOLVER)
+       API FETCHER (100% MATCHING COUNTER REPO SYSTEM)
     ════════════════════════════════════════════════════════ */
     async function fetchSingleTarget(type, query) {
       if (!query) return null;
@@ -728,158 +728,86 @@
       if (!q) return null;
 
       try {
-        // ── 1. Roblox Group ──
+        // ── 1. Roblox Group (Mixerno Counter) ──
         if (type === 'roblox') {
-          let count = null;
-          let name = '';
-          let pfp = '';
-
-          // 1. Try Mixerno for count & pfp
-          try {
-            const res = await fetch(`https://mixerno.space/api/roblox-group-counter/user/${q}`, { cache: 'no-store' });
-            if (res.ok) {
-              const data = await res.json();
-              const countObj = data.counts && data.counts.find(c => c.value === 'members');
-              const nameObj = data.user && data.user.find(u => u.value === 'name');
-              const pfpObj = data.user && data.user.find(u => u.value === 'pfp');
-              if (countObj && countObj.count != null && !isNaN(Number(countObj.count))) {
-                count = Number(countObj.count);
-              }
-              if (nameObj && nameObj.count && typeof nameObj.count === 'string' && nameObj.count.trim() !== '') {
-                name = nameObj.count.trim();
-              }
-              if (pfpObj && pfpObj.count) {
-                pfp = pfpObj.count;
-              }
-            }
-          } catch (e) {}
-
-          // 2. If name is missing or generic, query Roblox official v2/groups endpoint
-          if (!name || name === q || name.startsWith('Group ')) {
-            try {
-              const resV2 = await fetch(`https://groups.roblox.com/v2/groups?groupIds=${q}`);
-              if (resV2.ok) {
-                const dV2 = await resV2.json();
-                if (dV2.data && dV2.data.length > 0 && dV2.data[0].name) {
-                  name = dV2.data[0].name;
-                }
-              }
-            } catch (_) {}
-          }
-
-          // 3. If count or name is still missing, query Roblox official v1/groups
-          if (count === null || !name) {
-            try {
-              const resV1 = await fetch(`https://groups.roblox.com/v1/groups/${q}`);
-              if (resV1.ok) {
-                const dV1 = await resV1.json();
-                if (count === null && dV1.memberCount != null) count = Number(dV1.memberCount);
-                if (!name && dV1.name) name = dV1.name;
-              }
-            } catch (_) {}
-          }
-
-          // 4. If pfp is missing, query Roblox thumbnails
-          if (!pfp) {
-            try {
-              const iconRes = await fetch(`https://thumbnails.roblox.com/v1/groups/icons?groupIds=${q}&size=150x150&format=Png&isCircular=false`);
-              if (iconRes.ok) {
-                const idata = await iconRes.json();
-                pfp = idata?.data?.[0]?.imageUrl || '';
-              }
-            } catch (_) {}
-          }
-
-          if (count !== null) {
-            return { count, name: name || `Group ${q}`, pfp };
-          }
-          return { name: name || `Group ${q}`, count: null, pfp };
+          const res = await fetch(`https://mixerno.space/api/roblox-group-counter/user/${q}`, { cache: 'no-store' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          const countObj  = data.counts && data.counts.find(c => c.value === 'members');
+          const nameObj   = data.user   && data.user.find(u => u.value === 'name');
+          const pfpObj    = data.user   && data.user.find(u => u.value === 'pfp');
+          return {
+            count: countObj && countObj.count != null && !isNaN(Number(countObj.count)) ? Number(countObj.count) : null,
+            name: nameObj && nameObj.count ? nameObj.count : '',
+            pfp: pfpObj && pfpObj.count ? pfpObj.count : ''
+          };
         }
 
         // ── 2. Roblox Game Visits / Active Players ──
         if (type === 'roblox-game-visits' || type === 'roblox-game-players') {
           const metric = (type === 'roblox-game-visits') ? 'visits' : 'playing';
-          try {
-            const res = await fetch(`https://mixerno.space/api/roblox-game-counter/user/${q}`, { cache: 'no-store' });
-            if (res.ok) {
-              const data = await res.json();
-              const countObj = data.counts && data.counts.find(c => c.value === metric);
-              const nameObj = data.user && data.user.find(u => u.value === 'name');
-              const pfpObj = data.user && data.user.find(u => u.value === 'pfp');
-              const countVal = countObj && countObj.count != null && !isNaN(Number(countObj.count)) ? Number(countObj.count) : null;
-              if (countVal !== null) {
-                return {
-                  count: countVal,
-                  name: nameObj && nameObj.count ? nameObj.count : `Roblox Game ${q}`,
-                  pfp: pfpObj && pfpObj.count ? pfpObj.count : ''
-                };
-              }
-            }
-          } catch (e) {}
-
-          return { name: `Game ${q}`, count: null, pfp: '' };
+          const res = await fetch(`https://mixerno.space/api/roblox-game-counter/user/${q}`, { cache: 'no-store' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          const countObj  = data.counts && data.counts.find(c => c.value === metric);
+          const nameObj   = data.user   && data.user.find(u => u.value === 'name');
+          const pfpObj    = data.user   && data.user.find(u => u.value === 'pfp');
+          return {
+            count: countObj && countObj.count != null && !isNaN(Number(countObj.count)) ? Number(countObj.count) : null,
+            name: nameObj && nameObj.count ? nameObj.count : `Roblox Game ${q}`,
+            pfp: pfpObj && pfpObj.count ? pfpObj.count : ''
+          };
         }
 
-        // ── 3. YouTube (Mixerno estv3 + SCTools fallback) ──
+        // ── 3. YouTube (Mixerno estv3) ──
         if (type === 'youtube') {
-          try {
-            const res = await fetch(`https://backend.mixerno.space/api/youtube/estv3/${q}`, { cache: 'no-store' });
-            if (res.ok) {
-              const data = await res.json();
-              if (data.items && data.items.length) {
-                const item = data.items[0];
-                const count = item.statistics && item.statistics.subscriberCount ? Number(item.statistics.subscriberCount) : null;
-                const name = item.snippet && item.snippet.title ? item.snippet.title : `YT ${q}`;
-                const pfp = item.snippet && item.snippet.thumbnails ? (item.snippet.thumbnails.default?.url || '') : '';
-                if (count !== null) return { count, name, pfp };
-              }
-            }
-          } catch (e) {}
-
-          try {
-            const res2 = await fetch(`https://ests.sctools.org/api/get/${q}`, { cache: 'no-store' });
-            if (res2.ok) {
-              const data2 = await res2.json();
-              if (data2 && data2.stats) {
-                const count = data2.stats.estCount !== undefined ? Number(data2.stats.estCount) : (data2.stats.apiCount !== undefined ? Number(data2.stats.apiCount) : null);
-                if (count !== null) return { count, name: data2.info?.name || `YT ${q}`, pfp: data2.info?.avatar || '' };
-              }
-            }
-          } catch (e) {}
-
-          return { name: `${q}`, count: null, pfp: '' };
+          const res = await fetch(`https://backend.mixerno.space/api/youtube/estv3/${q}`, { cache: 'no-store' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          if (data.items && data.items.length) {
+            const item = data.items[0];
+            const count = item.statistics && item.statistics.subscriberCount ? Number(item.statistics.subscriberCount) : null;
+            const name = item.snippet && item.snippet.title ? item.snippet.title : `YT ${q}`;
+            const pfp = item.snippet && item.snippet.thumbnails ? (item.snippet.thumbnails.default?.url || '') : '';
+            return { count, name, pfp };
+          }
+          return { name: `${q}`, count: null, pfp: '', isDead: true };
         }
 
-        // ── 4. YouTube (SCTools + Mixerno estv3 fallback) ──
+        // ── 4. YouTube (SCTools + Fallback) ──
         if (type === 'youtube-sctools') {
+          const sctoolsReq = fetch(`https://ests.sctools.org/api/get/${q}`, { cache: 'no-store' });
+          const mixernoReq = fetch(`https://backend.mixerno.space/api/youtube/estv3/${q}`, { cache: 'no-store' }).catch(() => null);
+
           try {
-            const res = await fetch(`https://ests.sctools.org/api/get/${q}`, { cache: 'no-store' });
+            const res = await sctoolsReq;
             if (res.ok) {
               const data = await res.json();
               if (data && data.stats) {
                 const count = data.stats.estCount !== undefined ? Number(data.stats.estCount) : (data.stats.apiCount !== undefined ? Number(data.stats.apiCount) : null);
-                if (count !== null) {
-                  return { count, name: data.info?.name || `YT ${q}`, pfp: data.info?.avatar || '' };
-                }
+                const name = data.info?.name || `YT ${q}`;
+                const pfp = data.info?.avatar || '';
+                return { count, name, pfp };
               }
             }
           } catch(e) {}
 
           try {
-            const mRes = await fetch(`https://backend.mixerno.space/api/youtube/estv3/${q}`, { cache: 'no-store' });
-            if (mRes.ok) {
+            const mRes = await mixernoReq;
+            if (mRes && mRes.ok) {
               const mData = await mRes.json();
               if (mData.items && mData.items.length) {
                 const item = mData.items[0];
-                const count = item.statistics && item.statistics.subscriberCount ? Number(item.statistics.subscriberCount) : null;
-                if (count !== null) {
-                  return { count, name: item.snippet?.title || `YT ${q}`, pfp: item.snippet?.thumbnails?.default?.url || '' };
-                }
+                return {
+                  count: item.statistics && item.statistics.subscriberCount ? Number(item.statistics.subscriberCount) : null,
+                  name: item.snippet?.title || `YT ${q}`,
+                  pfp: item.snippet?.thumbnails?.default?.url || ''
+                };
               }
             }
           } catch(e) {}
 
-          return { name: `${q}`, count: null, pfp: '' };
+          return { name: `${q}`, count: null, pfp: '', isDead: true };
         }
 
         // ── 5. TikTok (Mixerno Followers) ──
@@ -888,71 +816,55 @@
           const urlMatch = q.match(/tiktok\.com\/@([a-zA-Z0-9_\.]+)/i);
           if (urlMatch) q = urlMatch[1];
 
-          try {
-            const res = await fetch(`https://mixerno.space/api/tiktok-user-counter/user/${q}`, { cache: 'no-store' });
-            if (res.ok) {
-              const data = await res.json();
-              const countObj = data.counts && data.counts.find(c => c.value === 'followers');
-              const nameObj = data.user && data.user.find(u => u.value === 'name');
-              const pfpObj = data.user && data.user.find(u => u.value === 'pfp');
-              const countVal = countObj && countObj.count != null && !isNaN(Number(countObj.count)) ? Number(countObj.count) : null;
-              if (countVal !== null) {
-                return {
-                  count: countVal,
-                  name: nameObj && nameObj.count ? nameObj.count : `@${q}`,
-                  pfp: pfpObj && pfpObj.count ? pfpObj.count : ''
-                };
-              }
-            }
-          } catch (e) {}
-
-          return { name: `@${q}`, count: null, pfp: '' };
+          const res = await fetch(`https://mixerno.space/api/tiktok-user-counter/user/${q}`, { cache: 'no-store' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          const countObj  = data.counts && data.counts.find(c => c.value === 'followers');
+          const nameObj   = data.user   && data.user.find(u => u.value === 'name');
+          const pfpObj    = data.user   && data.user.find(u => u.value === 'pfp');
+          return {
+            count: countObj && countObj.count != null && !isNaN(Number(countObj.count)) ? Number(countObj.count) : null,
+            name: nameObj && nameObj.count ? nameObj.count : `@${q}`,
+            pfp: pfpObj && pfpObj.count ? pfpObj.count : ''
+          };
         }
 
         // ── 6. Instagram (NextCounts Stats) ──
         if (type === 'instagram') {
           if (q.startsWith('@')) q = q.slice(1);
-          try {
-            const res = await fetch(`https://api-v2.nextcounts.com/api/instagram/user/stats/${q}`, { cache: 'no-store' });
-            if (res.ok) {
-              const data = await res.json();
-              if (data && data.success !== false) {
-                let count = data.followers !== undefined ? Number(data.followers) : null;
-                let name = data.username || null;
-                let pfp = data.avatar || '';
+          const res = await fetch(`https://api-v2.nextcounts.com/api/instagram/user/stats/${q}`, { cache: 'no-store' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          if (data && data.success !== false) {
+            let count = data.followers !== undefined ? Number(data.followers) : null;
+            let name = data.username || null;
+            let pfp = data.avatar || '';
 
-                if (count === null || !name) {
-                  const user = data.data?.xig_user_by_igid_v2?.user_dict || {};
-                  if (count === null) count = Number(user.follower_count || 0);
-                  if (!name) name = user.username || q;
-                  if (!pfp) pfp = user.profile_pic_url || '';
-                }
-                if (count !== null) return { count, name: name || `@${q}`, pfp };
-              }
+            if (count === null || !name) {
+              const user = data.data?.xig_user_by_igid_v2?.user_dict || {};
+              if (count === null) count = Number(user.follower_count || 0);
+              if (!name) name = user.username || q;
+              if (!pfp) pfp = user.profile_pic_url || '';
             }
-          } catch (e) {}
-
-          return { name: `@${q}`, count: null, pfp: '' };
+            return { count, name: name || `@${q}`, pfp };
+          }
+          return { name: `@${q}`, count: null, pfp: '', isDead: true };
         }
 
         // ── 7. Twitter / X (NextCounts Stats) ──
         if (type === 'twitter') {
           if (q.startsWith('@')) q = q.slice(1);
-          try {
-            const res = await fetch(`https://api-v2.nextcounts.com/api/twitter/user/stats/${q}`, { cache: 'no-store' });
-            if (res.ok) {
-              const data = await res.json();
-              if (data && data.success !== false && data.followers !== undefined) {
-                return {
-                  count: Number(data.followers),
-                  name: q,
-                  pfp: `https://unavatar.io/twitter/${q}`
-                };
-              }
-            }
-          } catch (e) {}
-
-          return { name: `@${q}`, count: null, pfp: '' };
+          const res = await fetch(`https://api-v2.nextcounts.com/api/twitter/user/stats/${q}`, { cache: 'no-store' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          if (data && data.success !== false && data.followers !== undefined) {
+            return {
+              count: Number(data.followers),
+              name: q,
+              pfp: `https://unavatar.io/twitter/${q}`
+            };
+          }
+          return { name: `@${q}`, count: null, pfp: '', isDead: true };
         }
 
       } catch (e) {}
@@ -986,16 +898,13 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       EXACT REFRESH PACED ENGINE WITH REAL NAME RESOLUTION
+       EXACT REFRESH PACED ENGINE WITH ESTIMATION SAFEGUARD
     ════════════════════════════════════════════════════════ */
     function updateTrackerData(t, data, now) {
       if (!data) return;
 
-      if (data.name && data.name !== t.query) {
-        // Always upgrade if current name is missing or generic (e.g. "Group 12345" or "12345")
-        if (!t.name || t.name === t.query || t.name.startsWith('Group ') || t.name.startsWith('Game ') || t.name.startsWith('YT ')) {
-          t.name = data.name;
-        }
+      if (data.name && data.name !== t.query && (!t.name || t.name === t.query)) {
+        t.name = data.name;
       }
 
       if (data.pfp && data.pfp !== t.pfp) {
