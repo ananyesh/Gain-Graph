@@ -738,7 +738,7 @@
           const pfpObj    = data.user   && data.user.find(u => u.value === 'pfp');
           return {
             count: countObj && countObj.count != null && !isNaN(Number(countObj.count)) ? Number(countObj.count) : null,
-            name: nameObj && nameObj.count ? nameObj.count : '',
+            name: nameObj && nameObj.count ? String(nameObj.count).trim() : '',
             pfp: pfpObj && pfpObj.count ? pfpObj.count : ''
           };
         }
@@ -754,7 +754,7 @@
           const pfpObj    = data.user   && data.user.find(u => u.value === 'pfp');
           return {
             count: countObj && countObj.count != null && !isNaN(Number(countObj.count)) ? Number(countObj.count) : null,
-            name: nameObj && nameObj.count ? nameObj.count : `Roblox Game ${q}`,
+            name: nameObj && nameObj.count ? String(nameObj.count).trim() : `Roblox Game ${q}`,
             pfp: pfpObj && pfpObj.count ? pfpObj.count : ''
           };
         }
@@ -767,7 +767,7 @@
           if (data.items && data.items.length) {
             const item = data.items[0];
             const count = item.statistics && item.statistics.subscriberCount ? Number(item.statistics.subscriberCount) : null;
-            const name = item.snippet && item.snippet.title ? item.snippet.title : `YT ${q}`;
+            const name = item.snippet && item.snippet.title ? String(item.snippet.title).trim() : `YT ${q}`;
             const pfp = item.snippet && item.snippet.thumbnails ? (item.snippet.thumbnails.default?.url || '') : '';
             return { count, name, pfp };
           }
@@ -785,7 +785,7 @@
               const data = await res.json();
               if (data && data.stats) {
                 const count = data.stats.estCount !== undefined ? Number(data.stats.estCount) : (data.stats.apiCount !== undefined ? Number(data.stats.apiCount) : null);
-                const name = data.info?.name || `YT ${q}`;
+                const name = data.info?.name ? String(data.info.name).trim() : `YT ${q}`;
                 const pfp = data.info?.avatar || '';
                 return { count, name, pfp };
               }
@@ -800,7 +800,7 @@
                 const item = mData.items[0];
                 return {
                   count: item.statistics && item.statistics.subscriberCount ? Number(item.statistics.subscriberCount) : null,
-                  name: item.snippet?.title || `YT ${q}`,
+                  name: item.snippet?.title ? String(item.snippet.title).trim() : `YT ${q}`,
                   pfp: item.snippet?.thumbnails?.default?.url || ''
                 };
               }
@@ -824,7 +824,7 @@
           const pfpObj    = data.user   && data.user.find(u => u.value === 'pfp');
           return {
             count: countObj && countObj.count != null && !isNaN(Number(countObj.count)) ? Number(countObj.count) : null,
-            name: nameObj && nameObj.count ? nameObj.count : `@${q}`,
+            name: nameObj && nameObj.count ? String(nameObj.count).trim() : `@${q}`,
             pfp: pfpObj && pfpObj.count ? pfpObj.count : ''
           };
         }
@@ -898,13 +898,14 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       EXACT REFRESH PACED ENGINE WITH ESTIMATION SAFEGUARD
+       EXACT REFRESH PACED ENGINE WITH INSTANT REAL NAME UPDATE
     ════════════════════════════════════════════════════════ */
     function updateTrackerData(t, data, now) {
       if (!data) return;
 
-      if (data.name && data.name !== t.query && (!t.name || t.name === t.query)) {
-        t.name = data.name;
+      // Always update name whenever a valid string is returned by API
+      if (data.name && typeof data.name === 'string' && data.name.trim() !== '') {
+        t.name = data.name.trim();
       }
 
       if (data.pfp && data.pfp !== t.pfp) {
@@ -1496,7 +1497,7 @@
               type: t.type,
               query: t.query,
               color: t.color || getColorForString(t.query),
-              name: t.name || t.query,
+              name: (t.name && !t.name.startsWith('Group ') && !t.name.startsWith('Game ') && !t.name.startsWith('YT ')) ? t.name : t.query,
               pfp: t.pfp || '',
               initialCount: null,
               currentCount: null,
