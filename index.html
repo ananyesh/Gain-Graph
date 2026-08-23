@@ -314,9 +314,9 @@
     .config-group {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 12px;
       border-bottom: 1px solid #e2e8f0;
-      padding-bottom: 12px;
+      padding-bottom: 14px;
     }
     body.dark-mode .config-group { border-color: #334155; }
 
@@ -440,7 +440,7 @@
       </div>
       <div class="modal-body">
 
-        <!-- Bar Count & Sort Configuration -->
+        <!-- Bar Count, Refresh Interval & Sort Configuration -->
         <div class="config-group">
           <div class="config-row">
             <label>Max Visible Bars (5, 10, 15, 20...)</label>
@@ -453,6 +453,16 @@
               <option value="30">30 Bars</option>
             </select>
           </div>
+
+          <div class="config-row">
+            <label>Refresh Interval</label>
+            <div style="display:flex; align-items:center; gap:8px; width:220px;">
+              <input type="range" id="opt-refresh-slider" min="1" max="60" step="1" value="2" style="flex:1; cursor:pointer;" />
+              <input type="number" id="opt-refresh-input" min="1" max="60" step="1" value="2" style="width:48px; text-align:center;" />
+              <span style="font-size:13px; color:#64748b; font-weight:600;">s</span>
+            </div>
+          </div>
+
           <div class="config-row">
             <label>Auto-Sort Leaders (Overtake Mode)</label>
             <select id="opt-sort-mode">
@@ -478,6 +488,8 @@
     let isDarkMode = false;
     let maxVisibleBars = 10;
     let autoSort = true;
+    let pollIntervalSec = 2;
+    let pollTimerId = null;
 
     // Smooth Continuous Animation State
     let smoothLeaderMax = 10;
@@ -721,6 +733,11 @@
       }
     }
 
+    function resetPollTimer() {
+      if (pollTimerId) clearInterval(pollTimerId);
+      pollTimerId = setInterval(pollAll, pollIntervalSec * 1000);
+    }
+
     /* ════════════════════════════════════════════════════════
        60FPS CONTINUOUS ANIMATION LOOP
     ════════════════════════════════════════════════════════ */
@@ -768,7 +785,7 @@
       items = items.slice(0, maxVisibleBars);
       const { stepH } = applyResponsiveBarSizes(items.length);
 
-      // The leader bar is kept at ~84% width (leaving space for number on right)
+      // The leader bar is kept at ~84% width
       const visibleMax = Math.max(10, smoothLeaderMax * 1.18);
       const step = getStableRoundStep(visibleMax);
 
@@ -822,7 +839,7 @@
         }
         item.trackerObj.prevRank = rank;
 
-        // Smooth FLIP position perfectly filling container height
+        // Smooth FLIP position
         const targetY = rank * stepH;
         row.style.transform = `translateY(${targetY.toFixed(1)}px)`;
 
@@ -872,11 +889,23 @@
 
     const modal = document.getElementById('settings-modal');
     const inputList = document.getElementById('target-inputs-list');
+    const refreshSlider = document.getElementById('opt-refresh-slider');
+    const refreshInput = document.getElementById('opt-refresh-input');
+
+    // Sync slider & number input
+    refreshSlider.addEventListener('input', () => {
+      refreshInput.value = refreshSlider.value;
+    });
+    refreshInput.addEventListener('input', () => {
+      refreshSlider.value = refreshInput.value;
+    });
 
     function openModal() {
       inputList.innerHTML = '';
       document.getElementById('opt-max-bars').value = String(maxVisibleBars);
       document.getElementById('opt-sort-mode').value = String(autoSort);
+      refreshSlider.value = String(pollIntervalSec);
+      refreshInput.value = String(pollIntervalSec);
 
       trackers.forEach(t => {
         const row = document.createElement('div');
@@ -930,6 +959,7 @@
     document.getElementById('btn-save-settings').addEventListener('click', () => {
       maxVisibleBars = parseInt(document.getElementById('opt-max-bars').value) || 10;
       autoSort = document.getElementById('opt-sort-mode').value === 'true';
+      pollIntervalSec = Math.max(1, parseInt(refreshInput.value) || 2);
 
       const rows = inputList.querySelectorAll('.target-input-row');
       const newTrackers = [];
@@ -956,6 +986,7 @@
       });
 
       if (newTrackers.length > 0) trackers = newTrackers;
+      resetPollTimer();
       modal.classList.remove('open');
       saveState();
       pollAll();
@@ -988,7 +1019,8 @@
           activeInterval,
           isDarkMode,
           maxVisibleBars,
-          autoSort
+          autoSort,
+          pollIntervalSec
         };
         localStorage.setItem('gain_graph_dynamic_v2', JSON.stringify(data));
       } catch (e) {}
@@ -1021,6 +1053,7 @@
             }
             if (d.maxVisibleBars) maxVisibleBars = d.maxVisibleBars;
             if (d.autoSort !== undefined) autoSort = d.autoSort;
+            if (d.pollIntervalSec) pollIntervalSec = d.pollIntervalSec;
             return;
           }
         }
@@ -1033,11 +1066,12 @@
       ];
     }
 
+    window.addEventListener('resize', () => applyResponsiveBarSizes(trackers.length));
     window.addEventListener('beforeunload', saveState);
 
     loadState();
     pollAll();
-    setInterval(pollAll, 2000);
+    resetPollTimer();
 
     // Start 60FPS continuous animation
     requestAnimationFrame(animate);
