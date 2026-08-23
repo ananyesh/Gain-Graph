@@ -59,7 +59,6 @@
       bottom: 0;
       width: 1px;
       background: #e2e8f0;
-      transition: left 0.3s ease-out;
     }
     body.dark-mode .grid-line {
       background: #1e293b;
@@ -82,7 +81,6 @@
       font-size: 14px;
       font-weight: 500;
       color: #475569;
-      transition: left 0.3s ease-out;
     }
     body.dark-mode .scale-label {
       color: #94a3b8;
@@ -97,7 +95,7 @@
       position: relative;
       z-index: 3;
       gap: 8px;
-      overflow-y: auto;
+      overflow: hidden;
     }
 
     .bar-row {
@@ -106,7 +104,6 @@
       width: 100%;
       height: var(--bar-h);
       position: relative;
-      transition: all 0.3s ease;
     }
 
     /* Circular PFP Avatar on Left */
@@ -127,7 +124,7 @@
       background: #e2e8f0;
       box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
       border: 2px solid #ffffff;
-      transition: all 0.2s;
+      transition: width 0.2s, height 0.2s;
     }
     body.dark-mode .avatar-img {
       border-color: #1e293b;
@@ -152,7 +149,6 @@
       display: flex;
       align-items: center;
       padding: 0 14px;
-      transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.4s ease;
       position: absolute;
       left: 0;
       top: 0;
@@ -181,7 +177,6 @@
       color: #1e293b;
       white-space: nowrap;
       z-index: 4;
-      transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1);
       pointer-events: none;
       display: inline-flex;
       align-items: center;
@@ -398,10 +393,10 @@
   <!-- Fullscreen Chart Stage -->
   <div id="chart-wrapper">
 
-    <!-- Dynamic Scale Numbers at Top -->
+    <!-- Smooth Animated Scale Numbers at Top -->
     <div id="scale-header"></div>
 
-    <!-- Vertical Grid Lines Overlay -->
+    <!-- Smooth Animated Vertical Grid Lines Overlay -->
     <div id="grid-overlay"></div>
 
     <!-- Horizontal Bars List -->
@@ -468,7 +463,11 @@
     let maxVisibleBars = 10;
     let autoSort = true;
 
-    // Trackers State
+    // Smooth Continuous Animation State
+    let animatedTopScale = 10;
+    let targetTopScale = 10;
+
+    // Trackers State: [ { id, type, query, color, name, pfp, initialCount, currentCount, targetGain, displayGain, history } ]
     let trackers = [];
     let nextId = 1;
 
@@ -513,12 +512,9 @@
     /* ════════════════════════════════════════════════════════
        DYNAMIC X-AXIS SCALING ALGORITHM
     ════════════════════════════════════════════════════════ */
-    function getDynamicAxis(maxVal) {
-      if (maxVal <= 0) {
-        return { topScale: 10, ticks: [0, 2, 5, 8, 10] };
-      }
+    function computeTargetScale(maxVal) {
+      if (maxVal <= 0) return 10;
 
-      // Find order of magnitude
       const exp = Math.floor(Math.log10(maxVal));
       const magnitude = Math.pow(10, exp);
       const frac = maxVal / magnitude;
@@ -531,13 +527,7 @@
       else if (frac <= 8) niceMultiplier = 10;
       else niceMultiplier = 12;
 
-      const topScale = Math.round(niceMultiplier * magnitude);
-      const tickCount = 4; // 0, 25%, 50%, 75%, 100%
-      const ticks = [];
-      for (let i = 0; i <= tickCount; i++) {
-        ticks.push(Math.round((topScale / tickCount) * i));
-      }
-      return { topScale, ticks };
+      return Math.round(niceMultiplier * magnitude);
     }
 
     /* ════════════════════════════════════════════════════════
@@ -669,7 +659,7 @@
     /* ════════════════════════════════════════════════════════
        GAIN COMPUTATION
     ════════════════════════════════════════════════════════ */
-    function getGain(t, interval, now) {
+    function getRawGain(t, interval, now) {
       if (!t.history || t.history.length === 0 || t.currentCount === null) return 0;
 
       if (interval === 'total') {
@@ -702,7 +692,6 @@
             t.pfp = data.pfp;
             extractColorFromImage(data.pfp).then(c => {
               t.color = c;
-              render();
             });
           }
           if (t.initialCount === null) t.initialCount = data.count;
@@ -711,47 +700,76 @@
           if (t.history.length > 25000) t.history.shift();
         }
       }
-      render();
+
+      // Update target gain values
+      for (const t of trackers) {
+        t.targetGain = getRawGain(t, activeInterval, now);
+        if (t.displayGain === undefined) t.displayGain = t.targetGain;
+      }
+
+      const maxVal = Math.max(0, ...trackers.map(t => t.targetGain || 0));
+      targetTopScale = computeTargetScale(maxVal);
     }
 
     /* ════════════════════════════════════════════════════════
-       CHART RENDERING (ALIGNED PFP & PROPER LABELS)
+       60FPS CONTINUOUS ANIMATION LOOP (SMOOTH DYNAMIC X-AXIS)
     ════════════════════════════════════════════════════════ */
-    function render() {
-      const now = Date.now();
-      let items = trackers.map(t => {
-        const val = getGain(t, activeInterval, now);
-        return {
-          id: t.id,
-          name: t.name || t.query,
-          pfp: t.pfp || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%2394a3b8'/%3E%3C/svg%3E",
-          color: t.color || '#3b82f6',
-          value: val
-        };
+    function animate() {
+      // 1. Smoothly interpolate X-Axis Scale (No teleporting!)
+      const scaleDiff = targetTopScale - animatedTopScale;
+      if (Math.abs(scaleDiff) > 0.05) {
+        animatedTopScale += scaleDiff * 0.08; // Smooth 60fps easing
+      } else {
+        animatedTopScale = targetTopScale;
+      }
+
+      // 2. Smoothly interpolate Bar Value Numbers
+      trackers.forEach(t => {
+        if (t.displayGain === undefined) t.displayGain = t.targetGain || 0;
+        const valDiff = (t.targetGain || 0) - t.displayGain;
+        if (Math.abs(valDiff) > 0.1) {
+          t.displayGain += valDiff * 0.1;
+        } else {
+          t.displayGain = t.targetGain || 0;
+        }
       });
+
+      renderFrame();
+      requestAnimationFrame(animate);
+    }
+
+    function renderFrame() {
+      let items = trackers.map(t => ({
+        id: t.id,
+        name: t.name || t.query,
+        pfp: t.pfp || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%2394a3b8'/%3E%3C/svg%3E",
+        color: t.color || '#3b82f6',
+        displayVal: t.displayGain || 0,
+        targetVal: t.targetGain || 0
+      }));
 
       // Auto-Sort if enabled
       if (autoSort) {
-        items.sort((a, b) => b.value - a.value);
+        items.sort((a, b) => b.displayVal - a.displayVal);
       }
 
-      // Slice to max visible bars (e.g. 10, 15, 20)
+      // Slice to max visible bars
       items = items.slice(0, maxVisibleBars);
       applyResponsiveBarSizes(items.length);
 
-      // Compute Dynamic Axis
-      const maxVal = Math.max(0, ...items.map(i => i.value));
-      const { topScale, ticks } = getDynamicAxis(maxVal);
+      const topScale = Math.max(1, animatedTopScale);
+      const tickCount = 4; // 0, 25%, 50%, 75%, 100%
 
-      // 1. Render Top Scale Ticks & Vertical Gridlines
+      // 1. Render Top Scale Ticks & Vertical Gridlines smoothly
       const scaleHeader = document.getElementById('scale-header');
       const gridOverlay = document.getElementById('grid-overlay');
 
       scaleHeader.innerHTML = '';
       gridOverlay.innerHTML = '';
 
-      ticks.forEach(tickVal => {
-        const pct = ((tickVal / topScale) * 100).toFixed(2);
+      for (let i = 0; i <= tickCount; i++) {
+        const pct = ((i / tickCount) * 100).toFixed(2);
+        const tickVal = Math.round((topScale / tickCount) * i);
 
         // Scale Text at Top
         const lbl = document.createElement('div');
@@ -765,12 +783,12 @@
         line.className = 'grid-line';
         line.style.left = `${pct}%`;
         gridOverlay.appendChild(line);
-      });
+      }
 
-      // 2. Render Horizontal Bars
+      // 2. Render Horizontal Bars with Smooth Width & Number Placement
       const barsContainer = document.getElementById('bars-container');
       barsContainer.innerHTML = items.map(item => {
-        const ratio = Math.max(0, Math.min(1, item.value / topScale));
+        const ratio = Math.max(0, Math.min(1, item.displayVal / topScale));
         const widthPct = (ratio * 100).toFixed(2);
         const isShort = ratio < 0.18; // If bar is under 18% width, display name outside!
 
@@ -784,7 +802,7 @@
                 ${!isShort ? `<span class="bar-name-inside">${item.name}</span>` : ''}
               </div>
               <span class="bar-value-text" style="left: calc(${widthPct}% + 12px);">
-                <span>${item.value.toLocaleString()}</span>
+                <span>${Math.round(item.displayVal).toLocaleString()}</span>
                 ${isShort ? `<span class="bar-name-outside">${item.name}</span>` : ''}
               </span>
             </div>
@@ -801,14 +819,13 @@
         document.querySelectorAll('.interval-pill').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         activeInterval = btn.dataset.interval;
-        render();
+        pollAll();
       });
     });
 
     document.getElementById('btn-theme-toggle').addEventListener('click', () => {
       isDarkMode = !isDarkMode;
       document.body.classList.toggle('dark-mode', isDarkMode);
-      render();
     });
 
     const modal = document.getElementById('settings-modal');
@@ -888,6 +905,8 @@
             pfp: '',
             initialCount: null,
             currentCount: null,
+            targetGain: 0,
+            displayGain: 0,
             history: []
           });
         }
@@ -903,8 +922,11 @@
       trackers.forEach(t => {
         t.initialCount = t.currentCount;
         t.history = t.currentCount !== null ? [{ t: Date.now(), v: t.currentCount }] : [];
+        t.targetGain = 0;
+        t.displayGain = 0;
       });
-      render();
+      animatedTopScale = 10;
+      targetTopScale = 10;
       modal.classList.remove('open');
     });
 
@@ -944,6 +966,8 @@
               pfp: '',
               initialCount: null,
               currentCount: null,
+              targetGain: 0,
+              displayGain: 0,
               history: []
             }));
             if (d.activeInterval) activeInterval = d.activeInterval;
@@ -960,17 +984,19 @@
 
       // Default demo entries
       trackers = [
-        { id: nextId++, type: 'roblox-game-visits', query: '189707', color: '#2563eb', name: 'Candy & Chocolate', pfp: '', initialCount: null, currentCount: null, history: [] },
-        { id: nextId++, type: 'youtube', query: 'UCBJycsmduvYEL83R_U4JriQ', color: '#3b82f6', name: 'Marques Brownlee', pfp: '', initialCount: null, currentCount: null, history: [] }
+        { id: nextId++, type: 'roblox-game-visits', query: '189707', color: '#2563eb', name: 'Candy & Chocolate', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, history: [] },
+        { id: nextId++, type: 'youtube', query: 'UCBJycsmduvYEL83R_U4JriQ', color: '#3b82f6', name: 'Marques Brownlee', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, history: [] }
       ];
     }
 
-    window.addEventListener('resize', render);
     window.addEventListener('beforeunload', saveState);
 
     loadState();
     pollAll();
     setInterval(pollAll, 2000);
+
+    // Start 60FPS continuous smooth animation
+    requestAnimationFrame(animate);
   </script>
 </body>
 </html>
