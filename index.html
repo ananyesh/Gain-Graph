@@ -525,23 +525,27 @@
 
   <!-- Bulk Paste / Upload Mode Modal -->
   <div id="bulk-modal">
-    <div class="modal-card" style="width:520px;">
+    <div class="modal-card" style="width:530px;">
       <div class="modal-head">
         <span>Bulk Import Trackers</span>
         <button id="btn-close-bulk" style="background:none;border:none;font-size:18px;cursor:pointer;">&times;</button>
       </div>
       <div class="modal-body">
         <div style="display:flex; align-items:center; justify-content:space-between; background:#f1f5f9; padding:8px 12px; border-radius:8px; margin-bottom:4px;">
-          <label style="font-size:12px; font-weight:600; color:#334155;">Track numeric Game IDs as:</label>
-          <select id="bulk-import-type" style="padding:4px 8px; border-radius:6px; border:1px solid #cbd5e1; font-size:12px; font-weight:600;">
+          <label style="font-size:12px; font-weight:600; color:#334155;">Default Target Platform:</label>
+          <select id="bulk-import-type" style="padding:5px 10px; border-radius:6px; border:1px solid #cbd5e1; font-size:12px; font-weight:600; background:#fff; outline:none;">
             <option value="roblox-game-visits" selected>🎮 Roblox Game (Visits)</option>
             <option value="roblox-game-players">👥 Roblox Game (Playing / Active Players)</option>
             <option value="roblox">👥 Roblox Group</option>
-            <option value="youtube">📺 YouTube Channel</option>
+            <option value="youtube">📺 YouTube (Mixerno)</option>
+            <option value="youtube-sctools">📺 YouTube (SCTools)</option>
+            <option value="tiktok">🎵 TikTok</option>
+            <option value="twitter">🐦 Twitter / X</option>
+            <option value="instagram">📸 Instagram</option>
           </select>
         </div>
-        <p style="font-size:11px; color:#64748b;">Paste YouTube IDs (UC...), Roblox URLs/IDs, or platform links (one per line):</p>
-        <textarea id="bulk-paste-text" rows="12" placeholder="189707&#10;https://www.roblox.com/games/189707&#10;UCnaKddR1oxvCjZy3RHYq2Xw" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family:monospace; font-size:12px; resize:vertical; outline:none;"></textarea>
+        <p style="font-size:11px; color:#64748b;">Paste YouTube IDs (UC...), Roblox URLs/IDs, usernames, or platform links (one per line):</p>
+        <textarea id="bulk-paste-text" rows="12" placeholder="189707&#10;https://www.roblox.com/games/189707&#10;UCnaKddR1oxvCjZy3RHYq2Xw&#10;tiktok:khaby.lame&#10;twitter:elonmusk&#10;instagram:cristiano" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family:monospace; font-size:12px; resize:vertical; outline:none;"></textarea>
       </div>
       <div class="modal-foot">
         <button class="btn-action btn-secondary" id="btn-cancel-bulk">Cancel</button>
@@ -677,7 +681,7 @@
           };
         }
 
-        if (type === 'youtube' || type === 'youtube-sctools') {
+        if (type === 'youtube') {
           const res = await fetch(`https://mixerno.space/api/youtube-channel-counter/user/${q}`);
           if (res.ok) {
             const d = await res.json();
@@ -688,6 +692,24 @@
                 pfp: d?.user?.[1]?.count || ''
               };
             }
+          }
+          return {
+            name: `${q}`,
+            count: 0,
+            pfp: '',
+            isDead: true
+          };
+        }
+
+        if (type === 'youtube-sctools') {
+          const res = await fetch(`https://api.subscribercounter.nl/api/youtube-view-counter/${q}/data`);
+          if (res.ok) {
+            const d = await res.json();
+            return {
+              name: d?.channelName || `YT ${q}`,
+              count: d?.subCount || 0,
+              pfp: d?.channelAvatar || ''
+            };
           }
           return {
             name: `${q}`,
@@ -944,33 +966,45 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       SMART URL / ID LINE PARSER (WITH VISITS / PLAYERS PICKER)
+       SMART URL / ID LINE PARSER (ALL PLATFORMS + PREFIXES)
     ════════════════════════════════════════════════════════ */
-    function parseLineToTracker(rawLine, defaultNumType = defaultImportType) {
+    function parseLineToTracker(rawLine, defaultPlatformType = defaultImportType) {
       if (!rawLine) return null;
       let line = rawLine.trim();
       if (!line || line.startsWith('#') || line.startsWith('//')) return null;
 
       line = line.replace(/^[",'\s]+|[",'\s]+$/g, '');
 
-      let type = defaultNumType || 'roblox-game-visits';
+      let type = defaultPlatformType || 'roblox-game-visits';
       let query = line;
 
-      // Prefix detection (e.g. visits:189707, players:189707, group:12345, yt:UC...)
-      if (/^visits?:/i.test(line)) {
+      // Prefix matching
+      if (/^(visits?|roblox-visits?|game-visits?):/i.test(line)) {
         type = 'roblox-game-visits';
-        query = line.replace(/^visits?:/i, '').trim();
-      } else if (/^(players?|playing):/i.test(line)) {
+        query = line.replace(/^(visits?|roblox-visits?|game-visits?):/i, '').trim();
+      } else if (/^(players?|playing|roblox-players?|game-players?):/i.test(line)) {
         type = 'roblox-game-players';
-        query = line.replace(/^(players?|playing):/i, '').trim();
-      } else if (/^groups?:/i.test(line)) {
+        query = line.replace(/^(players?|playing|roblox-players?|game-players?):/i, '').trim();
+      } else if (/^(groups?|roblox-groups?):/i.test(line)) {
         type = 'roblox';
-        query = line.replace(/^groups?:/i, '').trim();
-      } else if (/^(yt|youtube):/i.test(line)) {
+        query = line.replace(/^(groups?|roblox-groups?):/i, '').trim();
+      } else if (/^(yt|youtube|mixerno):/i.test(line)) {
         type = 'youtube';
-        query = line.replace(/^(yt|youtube):/i, '').trim();
+        query = line.replace(/^(yt|youtube|mixerno):/i, '').trim();
+      } else if (/^(sctools|youtube-sctools):/i.test(line)) {
+        type = 'youtube-sctools';
+        query = line.replace(/^(sctools|youtube-sctools):/i, '').trim();
+      } else if (/^(tt|tiktok):/i.test(line)) {
+        type = 'tiktok';
+        query = line.replace(/^(tt|tiktok):/i, '').trim();
+      } else if (/^(twitter|x|tweet):/i.test(line)) {
+        type = 'twitter';
+        query = line.replace(/^(twitter|x|tweet):/i, '').trim();
+      } else if (/^(ig|instagram|insta):/i.test(line)) {
+        type = 'instagram';
+        query = line.replace(/^(ig|instagram|insta):/i, '').trim();
       }
-      // URL parsing
+      // URL matching
       else if (line.includes('youtube.com/channel/')) {
         type = 'youtube';
         const match = line.match(/channel\/([a-zA-Z0-9_\-]+)/);
@@ -980,10 +1014,10 @@
         const match = line.match(/@([a-zA-Z0-9_\-]+)/);
         if (match) query = match[1];
       } else if (line.startsWith('UC') && line.length >= 20) {
-        type = 'youtube';
+        type = (defaultPlatformType === 'youtube' || defaultPlatformType === 'youtube-sctools') ? defaultPlatformType : 'youtube';
         query = line;
       } else if (line.includes('roblox.com/games/')) {
-        type = defaultNumType || 'roblox-game-visits';
+        type = defaultPlatformType.startsWith('roblox-game') ? defaultPlatformType : 'roblox-game-visits';
         const match = line.match(/roblox\.com\/games\/(\d+)/);
         if (match) query = match[1];
       } else if (line.includes('roblox.com/groups/')) {
@@ -1002,8 +1036,11 @@
         type = 'instagram';
         const match = line.match(/instagram\.com\/([a-zA-Z0-9_\.]+)/);
         if (match) query = match[1];
-      } else if (/^\d{4,}$/.test(line)) {
-        type = defaultNumType || 'roblox-game-visits';
+      } else if (/^@/.test(line)) {
+        type = (defaultPlatformType === 'tiktok' || defaultPlatformType === 'twitter' || defaultPlatformType === 'instagram') ? defaultPlatformType : 'twitter';
+        query = line.replace(/^@/, '');
+      } else {
+        type = defaultPlatformType;
         query = line;
       }
 
