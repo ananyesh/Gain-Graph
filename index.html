@@ -536,9 +536,9 @@
         <div style="display:flex; align-items:center; justify-content:space-between; background:#f1f5f9; padding:8px 12px; border-radius:8px; margin-bottom:4px;">
           <label style="font-size:12px; font-weight:600; color:#334155;">Default Target Platform:</label>
           <select id="bulk-import-type" style="padding:5px 10px; border-radius:6px; border:1px solid #cbd5e1; font-size:12px; font-weight:600; background:#fff; outline:none;">
-            <option value="roblox-game-visits" selected>🎮 Roblox Game (Visits)</option>
+            <option value="roblox-game-visits">🎮 Roblox Game (Visits)</option>
             <option value="roblox-game-players">👥 Roblox Game (Playing / Active Players)</option>
-            <option value="roblox">👥 Roblox Group</option>
+            <option value="roblox" selected>👥 Roblox Group</option>
             <option value="youtube">📺 YouTube (Mixerno)</option>
             <option value="youtube-sctools">📺 YouTube (SCTools)</option>
             <option value="tiktok">🎵 TikTok</option>
@@ -547,7 +547,7 @@
           </select>
         </div>
         <p style="font-size:11px; color:#64748b;">Paste YouTube IDs (UC...), Roblox URLs/IDs, usernames, or platform links (one per line):</p>
-        <textarea id="bulk-paste-text" rows="12" placeholder="189707&#10;https://www.roblox.com/games/189707&#10;UCnaKddR1oxvCjZy3RHYq2Xw&#10;tiktok:khaby.lame&#10;twitter:elonmusk&#10;instagram:cristiano" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family:monospace; font-size:12px; resize:vertical; outline:none;"></textarea>
+        <textarea id="bulk-paste-text" rows="12" placeholder="1074557114&#10;https://www.roblox.com/groups/1074557114&#10;UCnaKddR1oxvCjZy3RHYq2Xw&#10;tiktok:khaby.lame&#10;twitter:elonmusk&#10;instagram:cristiano" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family:monospace; font-size:12px; resize:vertical; outline:none;"></textarea>
       </div>
       <div class="modal-foot">
         <button class="btn-action btn-secondary" id="btn-cancel-bulk">Cancel</button>
@@ -566,7 +566,7 @@
     let bgWorkerTimerId = null;
     let isPolling = false;
     let bgSweepIndex = 0;
-    let defaultImportType = 'roblox-game-visits';
+    let defaultImportType = 'roblox';
 
     // Smooth Continuous Animation State
     let smoothLeaderMax = 10;
@@ -720,7 +720,7 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       API FETCHER
+       API FETCHER (MIXERNO ROBLOX GROUP COUNTER & FALLBACK)
     ════════════════════════════════════════════════════════ */
     async function fetchSingleTarget(type, query) {
       if (!query) return null;
@@ -729,16 +729,28 @@
 
       try {
         if (type === 'roblox') {
-          const res = await fetch(`https://groups.roblox.com/v1/groups/${q}`);
-          if (!res.ok) return { name: `Group ${q}`, count: 0, pfp: '', isDead: true };
-          const d = await res.json();
-          let icon = '';
+          // Primary: Mixerno Roblox Group Counter API
           try {
-            const iconRes = await fetch(`https://thumbnails.roblox.com/v1/groups/icons?groupIds=${q}&size=150x150&format=Png&isCircular=false`);
-            const idata = await iconRes?.json();
-            icon = idata?.data?.[0]?.imageUrl || '';
+            const res = await fetch(`https://mixerno.space/api/roblox-group-counter/user/${q}`);
+            if (res.ok) {
+              const d = await res.json();
+              const members = d?.counts?.[0]?.count ?? d?.counts?.find(c => c.value === 'members')?.count ?? 0;
+              const name = d?.user?.[0]?.count || `Group ${q}`;
+              const pfp = d?.user?.[1]?.count || '';
+              return { name, count: members, pfp };
+            }
           } catch(e) {}
-          return { name: d.name || `Group ${q}`, count: d.memberCount || 0, pfp: icon };
+
+          // Fallback: Direct Roblox Groups API
+          try {
+            const res2 = await fetch(`https://groups.roblox.com/v1/groups/${q}`);
+            if (res2.ok) {
+              const d2 = await res2.json();
+              return { name: d2.name || `Group ${q}`, count: d2.memberCount || 0, pfp: '' };
+            }
+          } catch(e) {}
+
+          return { name: `Group ${q}`, count: 0, pfp: '', isDead: true };
         }
 
         if (type === 'roblox-game-visits' || type === 'roblox-game-players') {
@@ -900,7 +912,6 @@
     }
 
     async function backgroundSweep() {
-      // Only sweep large pools (> 25 channels)
       if (trackers.length <= Math.min(maxVisibleBars, 25)) return;
       const now = Date.now();
 
@@ -934,7 +945,6 @@
       const ms = Math.max(1, pollIntervalSec) * 1000;
       pollTimerId = setInterval(pollHotLeaders, ms);
 
-      // Only schedule background worker when there is an actual backlog (> visible count)
       if (trackers.length > Math.min(maxVisibleBars, 25)) {
         bgWorkerTimerId = setInterval(backgroundSweep, Math.max(1500, ms));
       }
@@ -1090,7 +1100,7 @@
 
       line = line.replace(/^[",'\s]+|[",'\s]+$/g, '');
 
-      let type = defaultPlatformType || 'roblox-game-visits';
+      let type = defaultPlatformType || 'roblox';
       let query = line;
 
       // Prefix matching
@@ -1212,9 +1222,9 @@
         row.className = 'target-input-row';
         row.innerHTML = `
           <select class="m-type">
+            <option value="roblox" ${t.type==='roblox'?'selected':''}>Roblox Group</option>
             <option value="roblox-game-visits" ${t.type==='roblox-game-visits'?'selected':''}>Roblox Game (Visits)</option>
             <option value="roblox-game-players" ${t.type==='roblox-game-players'?'selected':''}>Roblox Game (Players)</option>
-            <option value="roblox" ${t.type==='roblox'?'selected':''}>Roblox Group</option>
             <option value="youtube" ${t.type==='youtube'?'selected':''}>YouTube (Mixerno)</option>
             <option value="youtube-sctools" ${t.type==='youtube-sctools'?'selected':''}>YouTube (SCTools)</option>
             <option value="tiktok" ${t.type==='tiktok'?'selected':''}>TikTok</option>
@@ -1242,15 +1252,15 @@
       modal.classList.add('open');
     }
 
-    function addRow(type = 'roblox-game-visits', query = '') {
+    function addRow(type = 'roblox', query = '') {
       const row = document.createElement('div');
       row.className = 'target-input-row';
       row.innerHTML = `
         <select class="m-type">
+          <option value="roblox" selected>Roblox Group</option>
           <option value="roblox-game-visits">Roblox Game (Visits)</option>
           <option value="roblox-game-players">Roblox Game (Players)</option>
-          <option value="roblox">Roblox Group</option>
-          <option value="youtube" selected>YouTube (Mixerno)</option>
+          <option value="youtube">YouTube (Mixerno)</option>
           <option value="youtube-sctools">YouTube (SCTools)</option>
           <option value="tiktok">TikTok</option>
           <option value="twitter">Twitter</option>
@@ -1470,8 +1480,8 @@
 
       // Default demo entries
       trackers = [
-        { id: nextId++, type: 'roblox-game-visits', query: '189707', color: '#2563eb', name: 'Candy & Chocolate', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false, extractedColor: false },
-        { id: nextId++, type: 'youtube', query: 'UCBJycsmduvYEL83R_U4JriQ', color: '#3b82f6', name: 'Marques Brownlee', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false, extractedColor: false }
+        { id: nextId++, type: 'roblox', query: '1074557114', color: '#2563eb', name: 'SecretVerse Studio', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false, extractedColor: false },
+        { id: nextId++, type: 'youtube-sctools', query: 'UCX6OQ3DkcsbYNE6H8uQQuVA', color: '#3b82f6', name: 'MrBeast', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false, extractedColor: false }
       ];
     }
 
