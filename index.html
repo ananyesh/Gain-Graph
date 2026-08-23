@@ -571,7 +571,7 @@
     // Smooth Continuous Animation State
     let smoothLeaderMax = 10;
 
-    // Trackers State: [ { id, type, query, color, name, pfp, initialCount, currentCount, targetGain, displayGain, prevRank, history, isDead, extractedColor } ]
+    // Trackers State: [ { id, type, query, color, name, pfp, initialCount, currentCount, targetGain, displayGain, prevRank, history, isDead, extractedColor, lastValidTime } ]
     let trackers = [];
     let nextId = 1;
 
@@ -720,7 +720,7 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       API FETCHER (EXACT COUNTER REPO SYSTEM WITH ESTIMATION)
+       API FETCHER (WITH MULTI-TIER FALLBACKS & RESILIENCE)
     ════════════════════════════════════════════════════════ */
     async function fetchSingleTarget(type, query) {
       if (!query) return null;
@@ -728,91 +728,132 @@
       if (!q) return null;
 
       try {
-        // ── 1. Roblox Group (Mixerno Counter) ──
+        // ── 1. Roblox Group (Mixerno + Roblox Official Fallback) ──
         if (type === 'roblox') {
-          const res = await fetch(`https://mixerno.space/api/roblox-group-counter/user/${q}`, { cache: 'no-store' });
-          if (res.ok) {
-            const data = await res.json();
-            const countObj  = data.counts && data.counts.find(c => c.value === 'members');
-            const nameObj   = data.user   && data.user.find(u => u.value === 'name');
-            const pfpObj    = data.user   && data.user.find(u => u.value === 'pfp');
-            return {
-              count: countObj ? Number(countObj.count) : 0,
-              name: nameObj ? nameObj.count : `Group ${q}`,
-              pfp: pfpObj ? pfpObj.count : ''
-            };
-          }
-          return { name: `Group ${q}`, count: 0, pfp: '', isDead: true };
+          // Attempt 1: Mixerno Roblox Group Counter
+          try {
+            const res = await fetch(`https://mixerno.space/api/roblox-group-counter/user/${q}`, { cache: 'no-store' });
+            if (res.ok) {
+              const data = await res.json();
+              const countObj = data.counts && data.counts.find(c => c.value === 'members');
+              const nameObj = data.user && data.user.find(u => u.value === 'name');
+              const pfpObj = data.user && data.user.find(u => u.value === 'pfp');
+              const countVal = countObj && countObj.count != null && !isNaN(Number(countObj.count)) ? Number(countObj.count) : null;
+              const nameVal = nameObj && nameObj.count ? nameObj.count : '';
+              const pfpVal = pfpObj && pfpObj.count ? pfpObj.count : '';
+
+              if (countVal !== null && countVal > 0) {
+                return { count: countVal, name: nameVal || `Group ${q}`, pfp: pfpVal };
+              }
+            }
+          } catch (e) {}
+
+          // Attempt 2: Direct Roblox Groups API + Thumbnails API
+          try {
+            const res2 = await fetch(`https://groups.roblox.com/v1/groups/${q}`);
+            if (res2.ok) {
+              const d2 = await res2.json();
+              const count = d2.memberCount || 0;
+              const name = d2.name || `Group ${q}`;
+              let pfp = '';
+              try {
+                const iconRes = await fetch(`https://thumbnails.roblox.com/v1/groups/icons?groupIds=${q}&size=150x150&format=Png&isCircular=false`);
+                if (iconRes.ok) {
+                  const idata = await iconRes.json();
+                  pfp = idata?.data?.[0]?.imageUrl || '';
+                }
+              } catch (_) {}
+              return { count, name, pfp };
+            }
+          } catch (e) {}
+
+          return { name: `Group ${q}`, count: null, pfp: '' };
         }
 
         // ── 2. Roblox Game Visits / Active Players ──
         if (type === 'roblox-game-visits' || type === 'roblox-game-players') {
           const metric = (type === 'roblox-game-visits') ? 'visits' : 'playing';
-          const res = await fetch(`https://mixerno.space/api/roblox-game-counter/user/${q}`, { cache: 'no-store' });
-          if (res.ok) {
-            const data = await res.json();
-            const countObj  = data.counts && data.counts.find(c => c.value === metric);
-            const nameObj   = data.user   && data.user.find(u => u.value === 'name');
-            const pfpObj    = data.user   && data.user.find(u => u.value === 'pfp');
-            return {
-              count: countObj ? Number(countObj.count) : 0,
-              name: nameObj ? nameObj.count : `Roblox Game ${q}`,
-              pfp: pfpObj ? pfpObj.count : ''
-            };
-          }
-          return { name: `Game ${q}`, count: 0, pfp: '', isDead: true };
-        }
-
-        // ── 3. YouTube (Mixerno estv3) ──
-        if (type === 'youtube') {
-          const res = await fetch(`https://backend.mixerno.space/api/youtube/estv3/${q}`, { cache: 'no-store' });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.items && data.items.length) {
-              const item = data.items[0];
-              const count = item.statistics && item.statistics.subscriberCount ? Number(item.statistics.subscriberCount) : null;
-              const name = item.snippet && item.snippet.title ? item.snippet.title : `YT ${q}`;
-              const pfp = item.snippet && item.snippet.thumbnails ? (item.snippet.thumbnails.default?.url || '') : '';
-              return { count, name, pfp };
+          try {
+            const res = await fetch(`https://mixerno.space/api/roblox-game-counter/user/${q}`, { cache: 'no-store' });
+            if (res.ok) {
+              const data = await res.json();
+              const countObj = data.counts && data.counts.find(c => c.value === metric);
+              const nameObj = data.user && data.user.find(u => u.value === 'name');
+              const pfpObj = data.user && data.user.find(u => u.value === 'pfp');
+              const countVal = countObj && countObj.count != null && !isNaN(Number(countObj.count)) ? Number(countObj.count) : null;
+              if (countVal !== null) {
+                return {
+                  count: countVal,
+                  name: nameObj && nameObj.count ? nameObj.count : `Roblox Game ${q}`,
+                  pfp: pfpObj && pfpObj.count ? pfpObj.count : ''
+                };
+              }
             }
-          }
-          return { name: `${q}`, count: 0, pfp: '', isDead: true };
+          } catch (e) {}
+
+          return { name: `Game ${q}`, count: null, pfp: '' };
         }
 
-        // ── 4. YouTube (SCTools + Fallback) ──
-        if (type === 'youtube-sctools') {
-          const sctoolsReq = fetch(`https://ests.sctools.org/api/get/${q}`, { cache: 'no-store' });
-          const mixernoReq = fetch(`https://backend.mixerno.space/api/youtube/estv3/${q}`, { cache: 'no-store' }).catch(() => null);
+        // ── 3. YouTube (Mixerno estv3 + SCTools fallback) ──
+        if (type === 'youtube') {
+          try {
+            const res = await fetch(`https://backend.mixerno.space/api/youtube/estv3/${q}`, { cache: 'no-store' });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.items && data.items.length) {
+                const item = data.items[0];
+                const count = item.statistics && item.statistics.subscriberCount ? Number(item.statistics.subscriberCount) : null;
+                const name = item.snippet && item.snippet.title ? item.snippet.title : `YT ${q}`;
+                const pfp = item.snippet && item.snippet.thumbnails ? (item.snippet.thumbnails.default?.url || '') : '';
+                if (count !== null) return { count, name, pfp };
+              }
+            }
+          } catch (e) {}
 
           try {
-            const res = await sctoolsReq;
+            const res2 = await fetch(`https://ests.sctools.org/api/get/${q}`, { cache: 'no-store' });
+            if (res2.ok) {
+              const data2 = await res2.json();
+              if (data2 && data2.stats) {
+                const count = data2.stats.estCount !== undefined ? Number(data2.stats.estCount) : (data2.stats.apiCount !== undefined ? Number(data2.stats.apiCount) : null);
+                if (count !== null) return { count, name: data2.info?.name || `YT ${q}`, pfp: data2.info?.avatar || '' };
+              }
+            }
+          } catch (e) {}
+
+          return { name: `${q}`, count: null, pfp: '' };
+        }
+
+        // ── 4. YouTube (SCTools + Mixerno estv3 fallback) ──
+        if (type === 'youtube-sctools') {
+          try {
+            const res = await fetch(`https://ests.sctools.org/api/get/${q}`, { cache: 'no-store' });
             if (res.ok) {
               const data = await res.json();
               if (data && data.stats) {
                 const count = data.stats.estCount !== undefined ? Number(data.stats.estCount) : (data.stats.apiCount !== undefined ? Number(data.stats.apiCount) : null);
-                const name = data.info?.name || `YT ${q}`;
-                const pfp = data.info?.avatar || '';
-                return { count, name, pfp };
+                if (count !== null) {
+                  return { count, name: data.info?.name || `YT ${q}`, pfp: data.info?.avatar || '' };
+                }
               }
             }
           } catch(e) {}
 
           try {
-            const mRes = await mixernoReq;
-            if (mRes && mRes.ok) {
+            const mRes = await fetch(`https://backend.mixerno.space/api/youtube/estv3/${q}`, { cache: 'no-store' });
+            if (mRes.ok) {
               const mData = await mRes.json();
               if (mData.items && mData.items.length) {
                 const item = mData.items[0];
-                return {
-                  count: item.statistics && item.statistics.subscriberCount ? Number(item.statistics.subscriberCount) : null,
-                  name: item.snippet?.title || `YT ${q}`,
-                  pfp: item.snippet?.thumbnails?.default?.url || ''
-                };
+                const count = item.statistics && item.statistics.subscriberCount ? Number(item.statistics.subscriberCount) : null;
+                if (count !== null) {
+                  return { count, name: item.snippet?.title || `YT ${q}`, pfp: item.snippet?.thumbnails?.default?.url || '' };
+                }
               }
             }
           } catch(e) {}
 
-          return { name: `${q}`, count: 0, pfp: '', isDead: true };
+          return { name: `${q}`, count: null, pfp: '' };
         }
 
         // ── 5. TikTok (Mixerno Followers) ──
@@ -821,59 +862,71 @@
           const urlMatch = q.match(/tiktok\.com\/@([a-zA-Z0-9_\.]+)/i);
           if (urlMatch) q = urlMatch[1];
 
-          const res = await fetch(`https://mixerno.space/api/tiktok-user-counter/user/${q}`, { cache: 'no-store' });
-          if (res.ok) {
-            const data = await res.json();
-            const countObj  = data.counts && data.counts.find(c => c.value === 'followers');
-            const nameObj   = data.user   && data.user.find(u => u.value === 'name');
-            const pfpObj    = data.user   && data.user.find(u => u.value === 'pfp');
-            return {
-              count: countObj ? Number(countObj.count) : 0,
-              name: nameObj ? nameObj.count : `@${q}`,
-              pfp: pfpObj ? pfpObj.count : ''
-            };
-          }
-          return { name: `@${q}`, count: 0, pfp: '', isDead: true };
+          try {
+            const res = await fetch(`https://mixerno.space/api/tiktok-user-counter/user/${q}`, { cache: 'no-store' });
+            if (res.ok) {
+              const data = await res.json();
+              const countObj = data.counts && data.counts.find(c => c.value === 'followers');
+              const nameObj = data.user && data.user.find(u => u.value === 'name');
+              const pfpObj = data.user && data.user.find(u => u.value === 'pfp');
+              const countVal = countObj && countObj.count != null && !isNaN(Number(countObj.count)) ? Number(countObj.count) : null;
+              if (countVal !== null) {
+                return {
+                  count: countVal,
+                  name: nameObj && nameObj.count ? nameObj.count : `@${q}`,
+                  pfp: pfpObj && pfpObj.count ? pfpObj.count : ''
+                };
+              }
+            }
+          } catch (e) {}
+
+          return { name: `@${q}`, count: null, pfp: '' };
         }
 
         // ── 6. Instagram (NextCounts Stats) ──
         if (type === 'instagram') {
           if (q.startsWith('@')) q = q.slice(1);
-          const res = await fetch(`https://api-v2.nextcounts.com/api/instagram/user/stats/${q}`, { cache: 'no-store' });
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.success !== false) {
-              let count = data.followers !== undefined ? Number(data.followers) : null;
-              let name = data.username || null;
-              let pfp = data.avatar || '';
+          try {
+            const res = await fetch(`https://api-v2.nextcounts.com/api/instagram/user/stats/${q}`, { cache: 'no-store' });
+            if (res.ok) {
+              const data = await res.json();
+              if (data && data.success !== false) {
+                let count = data.followers !== undefined ? Number(data.followers) : null;
+                let name = data.username || null;
+                let pfp = data.avatar || '';
 
-              if (count === null || !name) {
-                const user = data.data?.xig_user_by_igid_v2?.user_dict || {};
-                if (count === null) count = Number(user.follower_count || 0);
-                if (!name) name = user.username || q;
-                if (!pfp) pfp = user.profile_pic_url || '';
+                if (count === null || !name) {
+                  const user = data.data?.xig_user_by_igid_v2?.user_dict || {};
+                  if (count === null) count = Number(user.follower_count || 0);
+                  if (!name) name = user.username || q;
+                  if (!pfp) pfp = user.profile_pic_url || '';
+                }
+                if (count !== null) return { count, name: name || `@${q}`, pfp };
               }
-              return { count: count || 0, name: name || `@${q}`, pfp };
             }
-          }
-          return { name: `@${q}`, count: 0, pfp: '', isDead: true };
+          } catch (e) {}
+
+          return { name: `@${q}`, count: null, pfp: '' };
         }
 
         // ── 7. Twitter / X (NextCounts Stats) ──
         if (type === 'twitter') {
           if (q.startsWith('@')) q = q.slice(1);
-          const res = await fetch(`https://api-v2.nextcounts.com/api/twitter/user/stats/${q}`, { cache: 'no-store' });
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.success !== false && data.followers !== undefined) {
-              return {
-                count: Number(data.followers),
-                name: q,
-                pfp: `https://unavatar.io/twitter/${q}`
-              };
+          try {
+            const res = await fetch(`https://api-v2.nextcounts.com/api/twitter/user/stats/${q}`, { cache: 'no-store' });
+            if (res.ok) {
+              const data = await res.json();
+              if (data && data.success !== false && data.followers !== undefined) {
+                return {
+                  count: Number(data.followers),
+                  name: q,
+                  pfp: `https://unavatar.io/twitter/${q}`
+                };
+              }
             }
-          }
-          return { name: `@${q}`, count: 0, pfp: '', isDead: true };
+          } catch (e) {}
+
+          return { name: `@${q}`, count: null, pfp: '' };
         }
 
       } catch (e) {}
@@ -907,11 +960,15 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       EXACT REFRESH PACED ENGINE
+       EXACT REFRESH PACED ENGINE WITH ESTIMATION SAFEGUARD
     ════════════════════════════════════════════════════════ */
     function updateTrackerData(t, data, now) {
-      if (!data || data.count === null) return;
-      t.name = data.name;
+      if (!data) return;
+
+      if (data.name && data.name !== t.query && (!t.name || t.name === t.query)) {
+        t.name = data.name;
+      }
+
       if (data.pfp && data.pfp !== t.pfp) {
         t.pfp = data.pfp;
         extractDominantColorFromImg(data.pfp, (hex) => {
@@ -919,11 +976,21 @@
           t.extractedColor = true;
         });
       }
+
       if (data.isDead) t.isDead = true;
-      if (t.initialCount === null) t.initialCount = data.count;
-      t.currentCount = data.count;
-      t.history.push({ t: now, v: data.count });
-      if (t.history.length > 25000) t.history.shift();
+
+      // Real count received
+      if (data.count !== null && !isNaN(data.count) && data.count > 0) {
+        if (t.initialCount === null) t.initialCount = data.count;
+        t.currentCount = data.count;
+        t.lastValidTime = now;
+        t.history.push({ t: now, v: data.count });
+        if (t.history.length > 25000) t.history.shift();
+      } else if (t.currentCount !== null && t.lastValidTime) {
+        // Estimation Mode: Keep existing count rather than dropping to 0
+        t.history.push({ t: now, v: t.currentCount });
+        if (t.history.length > 25000) t.history.shift();
+      }
     }
 
     async function pollHotLeaders() {
@@ -1378,7 +1445,8 @@
             prevRank: undefined,
             history: [],
             isDead: false,
-            extractedColor: false
+            extractedColor: false,
+            lastValidTime: null
           });
         }
       });
@@ -1424,7 +1492,8 @@
                 prevRank: undefined,
                 history: [],
                 isDead: false,
-                extractedColor: false
+                extractedColor: false,
+                lastValidTime: null
               });
             }
           }
@@ -1466,7 +1535,7 @@
     function saveState() {
       try {
         const data = {
-          trackers: trackers.map(t => ({ type: t.type, query: t.query, color: t.color, pfp: t.pfp })),
+          trackers: trackers.map(t => ({ type: t.type, query: t.query, color: t.color, pfp: t.pfp, name: t.name })),
           activeInterval,
           isDarkMode,
           maxVisibleBars,
@@ -1489,7 +1558,7 @@
               type: t.type,
               query: t.query,
               color: t.color || getColorForString(t.query),
-              name: t.query,
+              name: t.name || t.query,
               pfp: t.pfp || '',
               initialCount: null,
               currentCount: null,
@@ -1498,7 +1567,8 @@
               prevRank: undefined,
               history: [],
               isDead: false,
-              extractedColor: false
+              extractedColor: false,
+              lastValidTime: null
             }));
             if (d.activeInterval) activeInterval = d.activeInterval;
             if (d.isDarkMode) {
@@ -1516,8 +1586,8 @@
 
       // Default demo entries
       trackers = [
-        { id: nextId++, type: 'roblox', query: '1074557114', color: '#2563eb', name: 'SecretVerse Studio', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false, extractedColor: false },
-        { id: nextId++, type: 'youtube-sctools', query: 'UCX6OQ3DkcsbYNE6H8uQQuVA', color: '#3b82f6', name: 'MrBeast', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false, extractedColor: false }
+        { id: nextId++, type: 'roblox', query: '1074557114', color: '#2563eb', name: 'SecretVerse Studio', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false, extractedColor: false, lastValidTime: null },
+        { id: nextId++, type: 'youtube-sctools', query: 'UCX6OQ3DkcsbYNE6H8uQQuVA', color: '#3b82f6', name: 'MrBeast', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false, extractedColor: false, lastValidTime: null }
       ];
     }
 
