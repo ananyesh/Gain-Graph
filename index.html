@@ -8,6 +8,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <style>
+    :root {
+      --bar-h: 110px;
+      --avatar-size: 100px;
+      --avatar-col-w: 140px;
+      --font-size-inside: 16px;
+      --font-size-val: 17px;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
@@ -30,7 +38,7 @@
       height: 100vh;
       display: flex;
       flex-direction: column;
-      padding: 24px 40px;
+      padding: 24px 36px;
       position: relative;
     }
 
@@ -39,8 +47,8 @@
       position: absolute;
       top: 56px;
       bottom: 24px;
-      left: 180px; /* Space for avatars */
-      right: 80px; /* Space for right value numbers */
+      left: var(--avatar-col-w);
+      right: 90px;
       pointer-events: none;
       z-index: 1;
     }
@@ -51,6 +59,7 @@
       bottom: 0;
       width: 1px;
       background: #e2e8f0;
+      transition: left 0.3s ease-out;
     }
     body.dark-mode .grid-line {
       background: #1e293b;
@@ -58,8 +67,8 @@
 
     #scale-header {
       height: 28px;
-      margin-left: 180px;
-      margin-right: 80px;
+      margin-left: var(--avatar-col-w);
+      margin-right: 90px;
       position: relative;
       margin-bottom: 8px;
       z-index: 10;
@@ -73,6 +82,7 @@
       font-size: 14px;
       font-weight: 500;
       color: #475569;
+      transition: left 0.3s ease-out;
     }
     body.dark-mode .scale-label {
       color: #94a3b8;
@@ -83,22 +93,25 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      justify-content: space-around;
+      justify-content: space-evenly;
       position: relative;
       z-index: 3;
+      gap: 6px;
+      overflow-y: auto;
     }
 
     .bar-row {
       display: flex;
       align-items: center;
       width: 100%;
-      height: 130px;
+      height: var(--bar-h);
       position: relative;
+      transition: all 0.3s ease;
     }
 
     /* Circular PFP Avatar on Left */
     .avatar-wrap {
-      width: 160px;
+      width: var(--avatar-col-w);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -106,14 +119,14 @@
     }
 
     .avatar-img {
-      width: 115px;
-      height: 115px;
+      width: var(--avatar-size);
+      height: var(--avatar-size);
       border-radius: 50%;
       object-fit: cover;
       background: #e2e8f0;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
-      border: 3px solid #ffffff;
-      transition: transform 0.2s;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+      border: 2px solid #ffffff;
+      transition: all 0.2s;
     }
     body.dark-mode .avatar-img {
       border-color: #1e293b;
@@ -127,7 +140,7 @@
       position: relative;
       display: flex;
       align-items: center;
-      margin-right: 80px; /* Leave space so numbers at 100% don't clip */
+      margin-right: 90px;
     }
 
     .bar-fill {
@@ -137,7 +150,7 @@
       border-radius: 0;
       display: flex;
       align-items: center;
-      padding: 0 16px;
+      padding: 0 14px;
       transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.4s ease;
       position: absolute;
       left: 0;
@@ -148,7 +161,7 @@
 
     .bar-name-inside {
       color: #ffffff;
-      font-size: 16px;
+      font-size: var(--font-size-inside);
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
@@ -162,7 +175,7 @@
       position: absolute;
       top: 50%;
       transform: translateY(-50%);
-      font-size: 17px;
+      font-size: var(--font-size-val);
       font-weight: 600;
       color: #1e293b;
       white-space: nowrap;
@@ -182,13 +195,13 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      background: rgba(255, 255, 255, 0.9);
+      background: rgba(255, 255, 255, 0.92);
       border: 1px solid #cbd5e1;
       padding: 4px 8px;
       border-radius: 20px;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
       z-index: 99999;
-      opacity: 0.15;
+      opacity: 0.2;
       transition: opacity 0.2s, background 0.2s;
     }
     #floating-bar:hover {
@@ -243,7 +256,7 @@
     .modal-card {
       background: #ffffff;
       border-radius: 12px;
-      width: 540px;
+      width: 560px;
       max-width: 100%;
       box-shadow: 0 10px 30px rgba(0,0,0,0.25);
       overflow: hidden;
@@ -271,7 +284,39 @@
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
+    }
+
+    .config-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 12px;
+    }
+    body.dark-mode .config-group { border-color: #334155; }
+
+    .config-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+    }
+
+    .config-row select,
+    .config-row input[type="number"] {
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      font-size: 13px;
+      outline: none;
+    }
+    body.dark-mode .config-row select,
+    body.dark-mode .config-row input[type="number"] {
+      background: #0f172a;
+      color: #fff;
+      border-color: #475569;
     }
 
     .target-input-row {
@@ -340,7 +385,7 @@
   <!-- Fullscreen Chart Stage -->
   <div id="chart-wrapper">
 
-    <!-- Scale Numbers at Top -->
+    <!-- Dynamic Scale Numbers at Top -->
     <div id="scale-header"></div>
 
     <!-- Vertical Grid Lines Overlay -->
@@ -366,10 +411,34 @@
   <div id="settings-modal">
     <div class="modal-card">
       <div class="modal-head">
-        <span>Tracked Channels & Entities</span>
+        <span>Chart Settings & Trackers</span>
         <button id="btn-close-modal" style="background:none;border:none;font-size:18px;cursor:pointer;">&times;</button>
       </div>
       <div class="modal-body">
+
+        <!-- Bar Count & Sort Configuration -->
+        <div class="config-group">
+          <div class="config-row">
+            <label>Max Visible Bars (5, 10, 15, 20...)</label>
+            <select id="opt-max-bars">
+              <option value="2">2 Bars</option>
+              <option value="5">5 Bars</option>
+              <option value="10" selected>10 Bars</option>
+              <option value="15">15 Bars</option>
+              <option value="20">20 Bars</option>
+              <option value="30">30 Bars</option>
+            </select>
+          </div>
+          <div class="config-row">
+            <label>Auto-Sort Leaders (Highest Gain First)</label>
+            <select id="opt-sort-mode">
+              <option value="true" selected>Yes (Rank by Gain)</option>
+              <option value="false">No (Custom Order)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;">Tracked Entities</div>
         <div id="target-inputs-list" style="display:flex;flex-direction:column;gap:8px;"></div>
         <button class="btn-action btn-secondary" id="btn-add-row">＋ Add Another Tracker</button>
       </div>
@@ -383,10 +452,80 @@
   <script>
     let activeInterval = 'total'; // '1s', '1m', '1h', '1d', 'total'
     let isDarkMode = false;
+    let maxVisibleBars = 10;
+    let autoSort = true;
 
     // Trackers State
     let trackers = [];
     let nextId = 1;
+
+    /* ════════════════════════════════════════════════════════
+       DYNAMIC RESPONSIVE BAR SIZING
+    ════════════════════════════════════════════════════════ */
+    function applyResponsiveBarSizes(count) {
+      const num = Math.min(count, maxVisibleBars);
+      if (num <= 2) {
+        document.documentElement.style.setProperty('--bar-h', '130px');
+        document.documentElement.style.setProperty('--avatar-size', '115px');
+        document.documentElement.style.setProperty('--avatar-col-w', '160px');
+        document.documentElement.style.setProperty('--font-size-inside', '16px');
+        document.documentElement.style.setProperty('--font-size-val', '17px');
+      } else if (num <= 5) {
+        document.documentElement.style.setProperty('--bar-h', '85px');
+        document.documentElement.style.setProperty('--avatar-size', '75px');
+        document.documentElement.style.setProperty('--avatar-col-w', '120px');
+        document.documentElement.style.setProperty('--font-size-inside', '15px');
+        document.documentElement.style.setProperty('--font-size-val', '16px');
+      } else if (num <= 10) {
+        document.documentElement.style.setProperty('--bar-h', '52px');
+        document.documentElement.style.setProperty('--avatar-size', '46px');
+        document.documentElement.style.setProperty('--avatar-col-w', '80px');
+        document.documentElement.style.setProperty('--font-size-inside', '13px');
+        document.documentElement.style.setProperty('--font-size-val', '14px');
+      } else if (num <= 15) {
+        document.documentElement.style.setProperty('--bar-h', '36px');
+        document.documentElement.style.setProperty('--avatar-size', '32px');
+        document.documentElement.style.setProperty('--avatar-col-w', '60px');
+        document.documentElement.style.setProperty('--font-size-inside', '12px');
+        document.documentElement.style.setProperty('--font-size-val', '13px');
+      } else {
+        document.documentElement.style.setProperty('--bar-h', '26px');
+        document.documentElement.style.setProperty('--avatar-size', '24px');
+        document.documentElement.style.setProperty('--avatar-col-w', '50px');
+        document.documentElement.style.setProperty('--font-size-inside', '10px');
+        document.documentElement.style.setProperty('--font-size-val', '12px');
+      }
+    }
+
+    /* ════════════════════════════════════════════════════════
+       DYNAMIC X-AXIS SCALING ALGORITHM
+    ════════════════════════════════════════════════════════ */
+    function getDynamicAxis(maxVal) {
+      if (maxVal <= 0) {
+        return { topScale: 10, ticks: [0, 2, 5, 8, 10] };
+      }
+
+      // Find order of magnitude
+      const exp = Math.floor(Math.log10(maxVal));
+      const magnitude = Math.pow(10, exp);
+      const frac = maxVal / magnitude;
+
+      let niceMultiplier;
+      if (frac <= 1.2) niceMultiplier = 1.5;
+      else if (frac <= 2) niceMultiplier = 2.5;
+      else if (frac <= 3) niceMultiplier = 4;
+      else if (frac <= 5) niceMultiplier = 6;
+      else if (frac <= 8) niceMultiplier = 10;
+      else niceMultiplier = 12;
+
+      const topScale = Math.round(niceMultiplier * magnitude);
+      const tickCount = 4; // 0, 25%, 50%, 75%, 100%
+      const ticks = [];
+      for (let i = 0; i <= tickCount; i++) {
+        ticks.push(Math.round((topScale / tickCount) * i));
+      }
+      return { topScale, ticks };
+    }
 
     /* ════════════════════════════════════════════════════════
        DOMINANT COLOR EXTRACTION FROM PFP IMAGE
@@ -418,7 +557,7 @@
               const max = Math.max(r, g, b);
               const min = Math.min(r, g, b);
               const l = (max + min) / 510;
-              if (l < 0.12 || l > 0.92) continue; // skip pure black or pure white
+              if (l < 0.12 || l > 0.92) continue;
 
               const d = max - min;
               const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
@@ -563,11 +702,11 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       CHART RENDERING (CLEAN GRID & VISIBLE NUMBERS)
+       CHART RENDERING (DYNAMIC AXIS + FLEXIBLE BARS)
     ════════════════════════════════════════════════════════ */
     function render() {
       const now = Date.now();
-      const items = trackers.map(t => {
+      let items = trackers.map(t => {
         const val = getGain(t, activeInterval, now);
         return {
           id: t.id,
@@ -578,28 +717,28 @@
         };
       });
 
-      // Calculate Stepped Clean Maximum for X-Axis Scale
-      const maxVal = Math.max(0, ...items.map(i => i.value));
-      let topScale = 100;
-      if (maxVal > 0) {
-        const exp = Math.floor(Math.log10(maxVal));
-        const stepBase = Math.pow(10, exp);
-        const mult = Math.ceil(maxVal / stepBase);
-        topScale = mult * stepBase;
-        if (topScale === maxVal) topScale += stepBase;
+      // Auto-Sort if enabled
+      if (autoSort) {
+        items.sort((a, b) => b.value - a.value);
       }
 
-      // 1. Render Top Scale Ticks & Vertical Gridlines (No blue line)
+      // Slice to max visible bars (e.g. 10, 15, 20)
+      items = items.slice(0, maxVisibleBars);
+      applyResponsiveBarSizes(items.length);
+
+      // Compute Dynamic Axis
+      const maxVal = Math.max(0, ...items.map(i => i.value));
+      const { topScale, ticks } = getDynamicAxis(maxVal);
+
+      // 1. Render Top Scale Ticks & Vertical Gridlines
       const scaleHeader = document.getElementById('scale-header');
       const gridOverlay = document.getElementById('grid-overlay');
-      const tickCount = 4; // 0, 25%, 50%, 75%, 100%
 
       scaleHeader.innerHTML = '';
       gridOverlay.innerHTML = '';
 
-      for (let i = 0; i <= tickCount; i++) {
-        const pct = (i / tickCount) * 100;
-        const tickVal = Math.round((topScale / tickCount) * i);
+      ticks.forEach(tickVal => {
+        const pct = ((tickVal / topScale) * 100).toFixed(2);
 
         // Scale Text at Top
         const lbl = document.createElement('div');
@@ -608,14 +747,14 @@
         lbl.textContent = tickVal.toLocaleString();
         scaleHeader.appendChild(lbl);
 
-        // Vertical Grid Line (Consistent light gray)
+        // Vertical Grid Line
         const line = document.createElement('div');
         line.className = 'grid-line';
         line.style.left = `${pct}%`;
         gridOverlay.appendChild(line);
-      }
+      });
 
-      // 2. Render Horizontal Bars with Unclipped Outside Numbers
+      // 2. Render Horizontal Bars
       const barsContainer = document.getElementById('bars-container');
       barsContainer.innerHTML = items.map(item => {
         const ratio = Math.max(0, Math.min(1, item.value / topScale));
@@ -630,7 +769,7 @@
               <div class="bar-fill" style="width: ${widthPct}%; background-color: ${item.color};">
                 <span class="bar-name-inside">${item.name}</span>
               </div>
-              <span class="bar-value-text" style="left: calc(${widthPct}% + 12px);">${item.value.toLocaleString()}</span>
+              <span class="bar-value-text" style="left: calc(${widthPct}% + 10px);">${item.value.toLocaleString()}</span>
             </div>
           </div>
         `;
@@ -660,6 +799,9 @@
 
     function openModal() {
       inputList.innerHTML = '';
+      document.getElementById('opt-max-bars').value = String(maxVisibleBars);
+      document.getElementById('opt-sort-mode').value = String(autoSort);
+
       trackers.forEach(t => {
         const row = document.createElement('div');
         row.className = 'target-input-row';
@@ -707,9 +849,12 @@
 
     document.getElementById('btn-open-settings').addEventListener('click', openModal);
     document.getElementById('btn-close-modal').addEventListener('click', () => modal.classList.remove('open'));
-    document.getElementById('btn-add-row').addEventListener('click', () => addRow('youtube', 'UCBJycsmduvYEL83R_U4JriQ'));
+    document.getElementById('btn-add-row').addEventListener('click', () => addRow('youtube', ''));
 
     document.getElementById('btn-save-settings').addEventListener('click', () => {
+      maxVisibleBars = parseInt(document.getElementById('opt-max-bars').value) || 10;
+      autoSort = document.getElementById('opt-sort-mode').value === 'true';
+
       const rows = inputList.querySelectorAll('.target-input-row');
       const newTrackers = [];
       rows.forEach(r => {
@@ -759,15 +904,17 @@
         const data = {
           trackers: trackers.map(t => ({ type: t.type, query: t.query, color: t.color })),
           activeInterval,
-          isDarkMode
+          isDarkMode,
+          maxVisibleBars,
+          autoSort
         };
-        localStorage.setItem('gain_graph_screenshot_v1', JSON.stringify(data));
+        localStorage.setItem('gain_graph_dynamic_v2', JSON.stringify(data));
       } catch (e) {}
     }
 
     function loadState() {
       try {
-        const raw = localStorage.getItem('gain_graph_screenshot_v1');
+        const raw = localStorage.getItem('gain_graph_dynamic_v2');
         if (raw) {
           const d = JSON.parse(raw);
           if (d.trackers && d.trackers.length > 0) {
@@ -787,12 +934,14 @@
               isDarkMode = d.isDarkMode;
               document.body.classList.toggle('dark-mode', isDarkMode);
             }
+            if (d.maxVisibleBars) maxVisibleBars = d.maxVisibleBars;
+            if (d.autoSort !== undefined) autoSort = d.autoSort;
             return;
           }
         }
       } catch (e) {}
 
-      // Default to Roblox game + Marques Brownlee matching user screenshot
+      // Default demo entries
       trackers = [
         { id: nextId++, type: 'roblox-game-visits', query: '189707', color: '#2563eb', name: 'Candy & Chocolate', pfp: '', initialCount: null, currentCount: null, history: [] },
         { id: nextId++, type: 'youtube', query: 'UCBJycsmduvYEL83R_U4JriQ', color: '#3b82f6', name: 'Marques Brownlee', pfp: '', initialCount: null, currentCount: null, history: [] }
