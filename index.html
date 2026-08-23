@@ -43,7 +43,7 @@
       position: relative;
     }
 
-    /* ── Top X-Axis Scale & Vertical Gridlines ── */
+    /* ── Top X-Axis Scale & Vertical Gridlines (Sliding Bar Chart Race) ── */
     #grid-overlay {
       position: absolute;
       top: 56px;
@@ -52,6 +52,7 @@
       right: 120px;
       pointer-events: none;
       z-index: 1;
+      overflow: hidden;
     }
 
     .grid-line {
@@ -60,6 +61,7 @@
       bottom: 0;
       width: 1px;
       background: #e2e8f0;
+      pointer-events: none;
     }
     body.dark-mode .grid-line {
       background: #1e293b;
@@ -72,6 +74,7 @@
       position: relative;
       margin-bottom: 8px;
       z-index: 10;
+      overflow: hidden;
     }
 
     .scale-label {
@@ -402,10 +405,10 @@
   <!-- Fullscreen Chart Stage -->
   <div id="chart-wrapper">
 
-    <!-- Smooth Animated Scale Numbers at Top -->
+    <!-- Smooth Moving Scale Numbers at Top -->
     <div id="scale-header"></div>
 
-    <!-- Smooth Animated Vertical Grid Lines Overlay -->
+    <!-- Smooth Moving Vertical Grid Lines Overlay -->
     <div id="grid-overlay"></div>
 
     <!-- Horizontal Bars List (Overtake Animated) -->
@@ -472,9 +475,8 @@
     let maxVisibleBars = 10;
     let autoSort = true;
 
-    // Smooth Continuous Animation State
-    let animatedTopScale = 10;
-    let targetTopScale = 10;
+    // Smooth Continuous Animation State for 1st Place Tracking
+    let smoothLeaderMax = 10;
 
     // Trackers State: [ { id, type, query, color, name, pfp, initialCount, currentCount, targetGain, displayGain, prevRank, history } ]
     let trackers = [];
@@ -524,24 +526,20 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       DYNAMIC X-AXIS SCALING ALGORITHM
+       DYNAMIC SLIDING STEP CALCULATION (BAR CHART RACE)
     ════════════════════════════════════════════════════════ */
-    function computeTargetScale(maxVal) {
-      if (maxVal <= 0) return 10;
+    function getNiceStep(range) {
+      if (range <= 0) return 5;
+      const exp = Math.floor(Math.log10(range));
+      const frac = range / Math.pow(10, exp);
 
-      const exp = Math.floor(Math.log10(maxVal));
-      const magnitude = Math.pow(10, exp);
-      const frac = maxVal / magnitude;
+      let stepMultiplier;
+      if (frac <= 2) stepMultiplier = 0.25;
+      else if (frac <= 5) stepMultiplier = 0.5;
+      else stepMultiplier = 1;
 
-      let niceMultiplier;
-      if (frac <= 1.2) niceMultiplier = 1.5;
-      else if (frac <= 2) niceMultiplier = 2.5;
-      else if (frac <= 3) niceMultiplier = 4;
-      else if (frac <= 5) niceMultiplier = 6;
-      else if (frac <= 8) niceMultiplier = 10;
-      else niceMultiplier = 12;
-
-      return Math.round(niceMultiplier * magnitude);
+      const step = stepMultiplier * Math.pow(10, exp);
+      return Math.max(1, Math.round(step));
     }
 
     /* ════════════════════════════════════════════════════════
@@ -720,33 +718,31 @@
         t.targetGain = getRawGain(t, activeInterval, now);
         if (t.displayGain === undefined) t.displayGain = t.targetGain;
       }
-
-      const maxVal = Math.max(0, ...trackers.map(t => t.targetGain || 0));
-      targetTopScale = computeTargetScale(maxVal);
     }
 
     /* ════════════════════════════════════════════════════════
-       60FPS ANIMATION & OVERTAKE SLIDE ENGINE
+       60FPS CONTINUOUS ANIMATION LOOP (SLIDING X-AXIS WITH 1ST PLACE)
     ════════════════════════════════════════════════════════ */
     function animate() {
-      // 1. Smoothly interpolate X-Axis Scale
-      const scaleDiff = targetTopScale - animatedTopScale;
-      if (Math.abs(scaleDiff) > 0.05) {
-        animatedTopScale += scaleDiff * 0.08;
-      } else {
-        animatedTopScale = targetTopScale;
-      }
-
-      // 2. Smoothly interpolate Bar Value Numbers
+      // 1. Smoothly interpolate Bar Value Numbers
       trackers.forEach(t => {
         if (t.displayGain === undefined) t.displayGain = t.targetGain || 0;
         const valDiff = (t.targetGain || 0) - t.displayGain;
-        if (Math.abs(valDiff) > 0.1) {
+        if (Math.abs(valDiff) > 0.05) {
           t.displayGain += valDiff * 0.1;
         } else {
           t.displayGain = t.targetGain || 0;
         }
       });
+
+      // 2. Track 1st place leader value continuously
+      const leaderVal = Math.max(1, ...trackers.map(t => t.displayGain || 0));
+      const leaderDiff = leaderVal - smoothLeaderMax;
+      if (Math.abs(leaderDiff) > 0.02) {
+        smoothLeaderMax += leaderDiff * 0.08;
+      } else {
+        smoothLeaderMax = leaderVal;
+      }
 
       renderFrame();
       requestAnimationFrame(animate);
@@ -771,39 +767,43 @@
       items = items.slice(0, maxVisibleBars);
       applyResponsiveBarSizes(items.length);
 
-      const topScale = Math.max(1, animatedTopScale);
-      const tickCount = 4;
+      // The leader bar is kept at ~84% width (leaving space for number on right)
+      // visibleMax continuously glides as 1st place changes!
+      const visibleMax = Math.max(10, smoothLeaderMax * 1.18);
+      const step = getNiceStep(visibleMax);
 
-      // 1. Render Top Scale Ticks & Vertical Gridlines smoothly
+      // 1. Render Dynamically Moving X-Axis Scale Ticks & Vertical Gridlines
       const scaleHeader = document.getElementById('scale-header');
       const gridOverlay = document.getElementById('grid-overlay');
 
       scaleHeader.innerHTML = '';
       gridOverlay.innerHTML = '';
 
-      for (let i = 0; i <= tickCount; i++) {
-        const pct = ((i / tickCount) * 100).toFixed(2);
-        const tickVal = Math.round((topScale / tickCount) * i);
+      // Draw all ticks that fit in [0, visibleMax]
+      for (let tickVal = 0; tickVal <= visibleMax * 1.1; tickVal += step) {
+        const pct = (tickVal / visibleMax) * 100;
+        if (pct < 0 || pct > 100) continue;
 
+        // Moving Scale Label at Top
         const lbl = document.createElement('div');
         lbl.className = 'scale-label';
         lbl.style.left = `${pct}%`;
         lbl.textContent = tickVal.toLocaleString();
         scaleHeader.appendChild(lbl);
 
+        // Moving Vertical Gridline
         const line = document.createElement('div');
         line.className = 'grid-line';
         line.style.left = `${pct}%`;
         gridOverlay.appendChild(line);
       }
 
-      // 2. Render and Animate Horizontal Bars with Overtake Positions
+      // 2. Render Horizontal Bars with Moving Relative Widths & Overtake Positions
       const barsContainer = document.getElementById('bars-container');
       const barH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar-h')) || 120;
       const rowGap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--row-gap')) || 16;
       const stepH = barH + rowGap;
 
-      // Ensure all item rows exist in DOM
       items.forEach((item, rank) => {
         let row = document.getElementById(`row-${item.id}`);
         if (!row) {
@@ -813,19 +813,19 @@
           barsContainer.appendChild(row);
         }
 
-        // Check for Overtake Event (moved up in rank!)
+        // Overtake Pulse
         if (item.trackerObj.prevRank !== undefined && rank < item.trackerObj.prevRank) {
           row.classList.remove('overtake-pulse');
-          void row.offsetWidth; // trigger reflow
+          void row.offsetWidth;
           row.classList.add('overtake-pulse');
         }
         item.trackerObj.prevRank = rank;
 
-        // Apply smooth FLIP translateY position for overtake gliding
+        // Smooth FLIP position
         const targetY = rank * stepH;
         row.style.transform = `translateY(${targetY}px)`;
 
-        const ratio = Math.max(0, Math.min(1, item.displayVal / topScale));
+        const ratio = Math.max(0, Math.min(1, item.displayVal / visibleMax));
         const widthPct = (ratio * 100).toFixed(2);
         const isShort = ratio < 0.18;
 
@@ -968,8 +968,7 @@
         t.displayGain = 0;
         t.prevRank = undefined;
       });
-      animatedTopScale = 10;
-      targetTopScale = 10;
+      smoothLeaderMax = 10;
       modal.classList.remove('open');
     });
 
