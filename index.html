@@ -169,6 +169,7 @@
       top: 0;
       overflow: hidden;
       white-space: nowrap;
+      transition: background-color 0.4s ease;
       will-change: width;
     }
 
@@ -570,11 +571,11 @@
     // Smooth Continuous Animation State
     let smoothLeaderMax = 10;
 
-    // Trackers State: [ { id, type, query, color, name, pfp, initialCount, currentCount, targetGain, displayGain, prevRank, history, isDead } ]
+    // Trackers State: [ { id, type, query, color, name, pfp, initialCount, currentCount, targetGain, displayGain, prevRank, history, isDead, extractedColor } ]
     let trackers = [];
     let nextId = 1;
 
-    // Fast deterministic vibrant palette generator
+    // Fast fallback vibrant palette generator
     const PALETTE = [
       '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899',
       '#06b6d4', '#f97316', '#14b8a6', '#6366f1', '#84cc16', '#d946ef',
@@ -596,13 +597,72 @@
       return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
     }
 
-    // Build optimized avatar image URL with multi-tier proxy support
     function getOptimizedAvatarUrl(pfp, name, color) {
       if (!pfp || !pfp.startsWith('http')) {
         return getDefaultAvatar(name, color);
       }
-      // Route Google / YouTube CDN images through fast Cloudflare image proxy to eliminate 403 blocks
       return `https://wsrv.nl/?url=${encodeURIComponent(pfp)}&w=140&h=140&fit=cover&output=webp`;
+    }
+
+    /* ════════════════════════════════════════════════════════
+       DOMINANT VIBRANT COLOR EXTRACTOR (FROM PFP VIA CANVAS)
+    ════════════════════════════════════════════════════════ */
+    const colorCache = new Map();
+
+    function extractDominantColorFromImg(url, callback) {
+      if (!url || !url.startsWith('http')) return;
+      if (colorCache.has(url)) {
+        callback(colorCache.get(url));
+        return;
+      }
+
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          canvas.width = 24;
+          canvas.height = 24;
+          ctx.drawImage(img, 0, 0, 24, 24);
+          const imgData = ctx.getImageData(0, 0, 24, 24).data;
+
+          let bestR = 59, bestG = 130, bestB = 246;
+          let maxScore = -1;
+
+          for (let i = 0; i < imgData.length; i += 4) {
+            const r = imgData[i];
+            const g = imgData[i + 1];
+            const b = imgData[i + 2];
+            const a = imgData[i + 3];
+
+            if (a < 128) continue; // Skip transparency
+
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const saturation = (max === 0) ? 0 : (max - min) / max;
+            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+
+            // Prioritize vivid, saturated brand colors
+            if (brightness > 25 && brightness < 235) {
+              const score = saturation * 3 + (1 - Math.abs(brightness - 128) / 128);
+              if (score > maxScore) {
+                maxScore = score;
+                bestR = r;
+                bestG = g;
+                bestB = b;
+              }
+            }
+          }
+
+          const toHex = (n) => n.toString(16).padStart(2, '0');
+          const hex = `#${toHex(bestR)}${toHex(bestG)}${toHex(bestB)}`;
+          colorCache.set(url, hex);
+          callback(hex);
+        } catch (e) {}
+      };
+      // Use wsrv.nl proxy to guarantee CORS permission on image canvas
+      img.src = `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=48&h=48&fit=cover&output=png`;
     }
 
     // Round human steps for moving X-axis ruler
@@ -807,7 +867,13 @@
     function updateTrackerData(t, data, now) {
       if (!data) return;
       t.name = data.name;
-      if (data.pfp) t.pfp = data.pfp;
+      if (data.pfp && data.pfp !== t.pfp) {
+        t.pfp = data.pfp;
+        extractDominantColorFromImg(data.pfp, (hex) => {
+          t.color = hex;
+          t.extractedColor = true;
+        });
+      }
       if (data.isDead) t.isDead = true;
       if (t.initialCount === null) t.initialCount = data.count;
       t.currentCount = data.count;
@@ -1261,7 +1327,8 @@
             displayGain: 0,
             prevRank: undefined,
             history: [],
-            isDead: false
+            isDead: false,
+            extractedColor: false
           });
         }
       });
@@ -1305,7 +1372,8 @@
                 displayGain: 0,
                 prevRank: undefined,
                 history: [],
-                isDead: false
+                isDead: false,
+                extractedColor: false
               });
             }
           }
@@ -1347,7 +1415,7 @@
     function saveState() {
       try {
         const data = {
-          trackers: trackers.map(t => ({ type: t.type, query: t.query, color: t.color })),
+          trackers: trackers.map(t => ({ type: t.type, query: t.query, color: t.color, pfp: t.pfp })),
           activeInterval,
           isDarkMode,
           maxVisibleBars,
@@ -1371,14 +1439,15 @@
               query: t.query,
               color: t.color || getColorForString(t.query),
               name: t.query,
-              pfp: '',
+              pfp: t.pfp || '',
               initialCount: null,
               currentCount: null,
               targetGain: 0,
               displayGain: 0,
               prevRank: undefined,
               history: [],
-              isDead: false
+              isDead: false,
+              extractedColor: false
             }));
             if (d.activeInterval) activeInterval = d.activeInterval;
             if (d.isDarkMode) {
@@ -1396,8 +1465,8 @@
 
       // Default demo entries
       trackers = [
-        { id: nextId++, type: 'roblox-game-visits', query: '189707', color: '#2563eb', name: 'Candy & Chocolate', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false },
-        { id: nextId++, type: 'youtube', query: 'UCBJycsmduvYEL83R_U4JriQ', color: '#3b82f6', name: 'Marques Brownlee', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false }
+        { id: nextId++, type: 'roblox-game-visits', query: '189707', color: '#2563eb', name: 'Candy & Chocolate', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false, extractedColor: false },
+        { id: nextId++, type: 'youtube', query: 'UCBJycsmduvYEL83R_U4JriQ', color: '#3b82f6', name: 'Marques Brownlee', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false, extractedColor: false }
       ];
     }
 
