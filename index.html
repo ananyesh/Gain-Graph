@@ -571,7 +571,7 @@
     // Smooth Continuous Animation State
     let smoothLeaderMax = 10;
 
-    // Trackers State: [ { id, type, query, color, name, pfp, initialCount, currentCount, targetGain, displayGain, prevRank, history, isDead, extractedColor, lastValidTime } ]
+    // Trackers State: [ { id, type, query, color, name, pfp, initialCount, currentCount, targetGain, displayGain, prevRank, history, isDead, extractedColor, lastRealCount, lastRealTime, realHistory, growthRate } ]
     let trackers = [];
     let nextId = 1;
 
@@ -872,39 +872,48 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       GAIN COMPUTATION (ONLY COMPUTES ON REAL DATA HISTORY)
+       ACCURATE GAIN COMPUTATION (1s, 1m, 1h, 1d, Total)
     ════════════════════════════════════════════════════════ */
     function getRawGain(t, interval, now) {
       if (!t.history || t.history.length === 0 || t.currentCount === null) return 0;
 
       if (interval === 'total') {
-        return t.initialCount !== null ? (t.currentCount - t.initialCount) : 0;
+        return t.initialCount !== null ? Math.max(0, t.currentCount - t.initialCount) : 0;
       }
 
       const windowMs = interval === '1s' ? 1000 : (interval === '1m' ? 60000 : (interval === '1h' ? 3600000 : 86400000));
 
       if (interval === '1s') {
-        return t.history.length >= 2 ? (t.currentCount - t.history[t.history.length - 2].v) : 0;
+        if (t.growthRate > 0) return Math.max(0, Math.round(t.growthRate));
+        return t.history.length >= 2 ? Math.max(0, t.currentCount - t.history[t.history.length - 2].v) : 0;
       }
 
       const targetT = now - windowMs;
-      let baseVal = t.history[0].v;
-      for (let i = t.history.length - 1; i >= 0; i--) {
-        if (t.history[i].t <= targetT) {
-          baseVal = t.history[i].v;
-          break;
+      const oldestT = t.history[0].t;
+      const duration = now - oldestT;
+
+      if (duration >= windowMs * 0.75) {
+        let baseVal = t.history[0].v;
+        for (let i = t.history.length - 1; i >= 0; i--) {
+          if (t.history[i].t <= targetT) {
+            baseVal = t.history[i].v;
+            break;
+          }
         }
+        return Math.max(0, t.currentCount - baseVal);
+      } else if (t.growthRate > 0) {
+        return Math.max(0, Math.round(t.growthRate * (windowMs / 1000)));
+      } else {
+        return Math.max(0, t.currentCount - t.history[0].v);
       }
-      return t.currentCount - baseVal;
     }
 
     /* ════════════════════════════════════════════════════════
-       EXACT REFRESH PACED ENGINE (ONLY TICKS ON REAL POLL)
+       POLL-BASED ESTIMATION ENGINE (MATCHING COUNTER REPO)
     ════════════════════════════════════════════════════════ */
     function updateTrackerData(t, data, now) {
       if (!data) return;
 
-      // Always update name whenever a valid string is returned by API
       if (data.name && typeof data.name === 'string' && data.name.trim() !== '') {
         t.name = data.name.trim();
       }
@@ -919,17 +928,38 @@
 
       if (data.isDead) t.isDead = true;
 
-      // Real count received on this poll tick
+      // Real count received
       if (data.count !== null && !isNaN(data.count) && data.count > 0) {
         const newCount = Number(data.count);
         if (t.initialCount === null) t.initialCount = newCount;
 
+        if (t.lastRealCount === null || t.lastRealCount !== newCount) {
+          t.realHistory.push({ t: now, v: newCount });
+          if (t.realHistory.length > 15) t.realHistory.shift();
+
+          if (t.realHistory.length >= 2) {
+            const oldest = t.realHistory[0];
+            const newest = t.realHistory[t.realHistory.length - 1];
+            const secDiff = (newest.t - oldest.t) / 1000;
+            if (secDiff > 0.5) {
+              t.growthRate = Math.max(0, (newest.v - oldest.v) / secDiff);
+            }
+          }
+          t.lastRealCount = newCount;
+          t.lastRealTime = now;
+        }
+
         t.currentCount = newCount;
-        t.lastValidTime = now;
         t.history.push({ t: now, v: newCount });
         if (t.history.length > 25000) t.history.shift();
+      } else if (t.lastRealCount !== null && t.lastRealTime !== null) {
+        // Counter EST Fallback: If API returns null, smoothly calculate est on this poll
+        const elapsedSec = (now - t.lastRealTime) / 1000;
+        const est = Math.round(t.lastRealCount + (t.growthRate || 0) * elapsedSec);
+        t.currentCount = Math.max(0, est);
+        t.history.push({ t: now, v: t.currentCount });
+        if (t.history.length > 25000) t.history.shift();
       }
-      // If API failed/null, preserve existing count without dropping to 0
     }
 
     async function pollHotLeaders() {
@@ -993,7 +1023,7 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       60FPS CONTINUOUS ANIMATION LOOP (ONLY SMOOTH EASING)
+       60FPS CONTINUOUS ANIMATION LOOP (FLIP EASING)
     ════════════════════════════════════════════════════════ */
     function animate() {
       trackers.forEach(t => {
@@ -1383,9 +1413,12 @@
             displayGain: 0,
             prevRank: undefined,
             history: [],
+            realHistory: [],
+            lastRealCount: null,
+            lastRealTime: null,
+            growthRate: 0,
             isDead: false,
-            extractedColor: false,
-            lastValidTime: null
+            extractedColor: false
           });
         }
       });
@@ -1430,9 +1463,12 @@
                 displayGain: 0,
                 prevRank: undefined,
                 history: [],
+                realHistory: [],
+                lastRealCount: null,
+                lastRealTime: null,
+                growthRate: 0,
                 isDead: false,
-                extractedColor: false,
-                lastValidTime: null
+                extractedColor: false
               });
             }
           }
@@ -1452,6 +1488,7 @@
       trackers.forEach(t => {
         t.initialCount = t.currentCount;
         t.history = t.currentCount !== null ? [{ t: Date.now(), v: t.currentCount }] : [];
+        t.realHistory = t.currentCount !== null ? [{ t: Date.now(), v: t.currentCount }] : [];
         t.targetGain = 0;
         t.displayGain = 0;
         t.prevRank = undefined;
@@ -1505,9 +1542,12 @@
               displayGain: 0,
               prevRank: undefined,
               history: [],
+              realHistory: [],
+              lastRealCount: null,
+              lastRealTime: null,
+              growthRate: 0,
               isDead: false,
-              extractedColor: false,
-              lastValidTime: null
+              extractedColor: false
             }));
             if (d.activeInterval) activeInterval = d.activeInterval;
             if (d.isDarkMode) {
@@ -1525,8 +1565,8 @@
 
       // Default demo entries
       trackers = [
-        { id: nextId++, type: 'roblox', query: '1074557114', color: '#2563eb', name: 'SecretVerse Studio', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false, extractedColor: false, lastValidTime: null },
-        { id: nextId++, type: 'youtube-sctools', query: 'UCX6OQ3DkcsbYNE6H8uQQuVA', color: '#3b82f6', name: 'MrBeast', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], isDead: false, extractedColor: false, lastValidTime: null }
+        { id: nextId++, type: 'roblox', query: '1074557114', color: '#2563eb', name: 'SecretVerse Studio', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], realHistory: [], lastRealCount: null, lastRealTime: null, growthRate: 0, isDead: false, extractedColor: false },
+        { id: nextId++, type: 'youtube-sctools', query: 'UCX6OQ3DkcsbYNE6H8uQQuVA', color: '#3b82f6', name: 'MrBeast', pfp: '', initialCount: null, currentCount: null, targetGain: 0, displayGain: 0, prevRank: undefined, history: [], realHistory: [], lastRealCount: null, lastRealTime: null, growthRate: 0, isDead: false, extractedColor: false }
       ];
     }
 
