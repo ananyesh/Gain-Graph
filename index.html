@@ -523,16 +523,25 @@
     </div>
   </div>
 
-  <!-- Bulk Paste Modal -->
+  <!-- Bulk Paste / Upload Mode Modal -->
   <div id="bulk-modal">
-    <div class="modal-card" style="width:500px;">
+    <div class="modal-card" style="width:520px;">
       <div class="modal-head">
-        <span>Bulk Paste Channel IDs / URLs</span>
+        <span>Bulk Import Trackers</span>
         <button id="btn-close-bulk" style="background:none;border:none;font-size:18px;cursor:pointer;">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="font-size:12px; color:#64748b;">Paste YouTube IDs (e.g. UC...), Roblox URLs, or channel links (one per line):</p>
-        <textarea id="bulk-paste-text" rows="12" placeholder="UCnaKddR1oxvCjZy3RHYq2Xw&#10;UCnNPvF3PeSLh5oSSw3Tp5KQ&#10;UCnNoL2uQUx7eqDN82IiwlQQ" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family:monospace; font-size:12px; resize:vertical; outline:none;"></textarea>
+        <div style="display:flex; align-items:center; justify-content:space-between; background:#f1f5f9; padding:8px 12px; border-radius:8px; margin-bottom:4px;">
+          <label style="font-size:12px; font-weight:600; color:#334155;">Track numeric Game IDs as:</label>
+          <select id="bulk-import-type" style="padding:4px 8px; border-radius:6px; border:1px solid #cbd5e1; font-size:12px; font-weight:600;">
+            <option value="roblox-game-visits" selected>🎮 Roblox Game (Visits)</option>
+            <option value="roblox-game-players">👥 Roblox Game (Playing / Active Players)</option>
+            <option value="roblox">👥 Roblox Group</option>
+            <option value="youtube">📺 YouTube Channel</option>
+          </select>
+        </div>
+        <p style="font-size:11px; color:#64748b;">Paste YouTube IDs (UC...), Roblox URLs/IDs, or platform links (one per line):</p>
+        <textarea id="bulk-paste-text" rows="12" placeholder="189707&#10;https://www.roblox.com/games/189707&#10;UCnaKddR1oxvCjZy3RHYq2Xw" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-family:monospace; font-size:12px; resize:vertical; outline:none;"></textarea>
       </div>
       <div class="modal-foot">
         <button class="btn-action btn-secondary" id="btn-cancel-bulk">Cancel</button>
@@ -551,6 +560,7 @@
     let bgWorkerTimerId = null;
     let isPolling = false;
     let bgSweepIndex = 0;
+    let defaultImportType = 'roblox-game-visits';
 
     // Smooth Continuous Animation State
     let smoothLeaderMax = 10;
@@ -559,7 +569,7 @@
     let trackers = [];
     let nextId = 1;
 
-    // Fast deterministic vibrant palette generator (Zero network requests, zero CORS errors!)
+    // Fast deterministic vibrant palette generator
     const PALETTE = [
       '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899',
       '#06b6d4', '#f97316', '#14b8a6', '#6366f1', '#84cc16', '#d946ef',
@@ -633,7 +643,7 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       API FETCHER (ROBUST WITH DEAD/404 RE-QUERY PROTECTION)
+       API FETCHER
     ════════════════════════════════════════════════════════ */
     async function fetchSingleTarget(type, query) {
       if (!query) return null;
@@ -679,7 +689,6 @@
               };
             }
           }
-          // Channel is deleted / terminated on YouTube -> mark dead so it never wastes polling requests
           return {
             name: `${q}`,
             count: 0,
@@ -742,13 +751,11 @@
       if (t.history.length > 25000) t.history.shift();
     }
 
-    // Fast Hot Poller: Keeps Visible Leaders Fresh (Every 1-2s)
     async function pollHotLeaders() {
       if (trackers.length === 0 || isPolling) return;
       isPolling = true;
       const now = Date.now();
 
-      // Only poll live non-dead channels
       const sorted = [...trackers].filter(t => !t.isDead).sort((a, b) => (b.targetGain || 0) - (a.targetGain || 0));
       const hotSlice = sorted.slice(0, Math.min(maxVisibleBars, 25));
 
@@ -765,7 +772,6 @@
       isPolling = false;
     }
 
-    // Continuous Background Sweep Worker: Scans through full pool
     async function backgroundSweep() {
       if (trackers.length === 0) return;
       const now = Date.now();
@@ -804,7 +810,6 @@
        60FPS CONTINUOUS ANIMATION LOOP
     ════════════════════════════════════════════════════════ */
     function animate() {
-      // 1. Smoothly interpolate Bar Value Numbers
       trackers.forEach(t => {
         if (t.displayGain === undefined) t.displayGain = t.targetGain || 0;
         const valDiff = (t.targetGain || 0) - t.displayGain;
@@ -815,7 +820,6 @@
         }
       });
 
-      // 2. Track 1st place leader value continuously
       const leaderVal = Math.max(1, ...trackers.map(t => t.displayGain || 0));
       const leaderDiff = leaderVal - smoothLeaderMax;
       if (Math.abs(leaderDiff) > 0.02) {
@@ -845,7 +849,6 @@
         return;
       }
 
-      // Remove placeholder if present
       const ph = barsContainer.querySelector('.empty-placeholder');
       if (ph) ph.remove();
 
@@ -859,7 +862,6 @@
         trackerObj: t
       }));
 
-      // Sort by Gain for Overtake Order
       if (autoSort) {
         items.sort((a, b) => b.displayVal - a.displayVal);
       }
@@ -867,11 +869,9 @@
       items = items.slice(0, maxVisibleBars);
       const { stepH } = applyResponsiveBarSizes(items.length);
 
-      // The leader bar is kept at ~84% width
       const visibleMax = Math.max(10, smoothLeaderMax * 1.18);
       const step = getStableRoundStep(visibleMax);
 
-      // 1. Render Dynamically Moving X-Axis Scale Ticks & Vertical Gridlines
       scaleHeader.innerHTML = '';
       gridOverlay.innerHTML = '';
 
@@ -898,7 +898,6 @@
         gridOverlay.appendChild(line);
       }
 
-      // 2. Render Horizontal Bars with Moving Relative Widths & Overtake Positions
       items.forEach((item, rank) => {
         let row = document.getElementById(`row-${item.id}`);
         if (!row) {
@@ -908,7 +907,6 @@
           barsContainer.appendChild(row);
         }
 
-        // Overtake Pulse
         if (item.trackerObj.prevRank !== undefined && rank < item.trackerObj.prevRank) {
           row.classList.remove('overtake-pulse');
           void row.offsetWidth;
@@ -916,7 +914,6 @@
         }
         item.trackerObj.prevRank = rank;
 
-        // Smooth FLIP position
         const targetY = rank * stepH;
         row.style.transform = `translateY(${targetY.toFixed(1)}px)`;
 
@@ -940,7 +937,6 @@
         `;
       });
 
-      // Remove orphaned rows
       const currentIds = new Set(items.map(i => `row-${i.id}`));
       Array.from(barsContainer.children).forEach(child => {
         if (child.id.startsWith('row-') && !currentIds.has(child.id)) child.remove();
@@ -948,19 +944,34 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       SMART URL / ID LINE PARSER
+       SMART URL / ID LINE PARSER (WITH VISITS / PLAYERS PICKER)
     ════════════════════════════════════════════════════════ */
-    function parseLineToTracker(rawLine) {
+    function parseLineToTracker(rawLine, defaultNumType = defaultImportType) {
       if (!rawLine) return null;
-      let line = rawLine.trim().replace(/\s+/g, '');
+      let line = rawLine.trim();
       if (!line || line.startsWith('#') || line.startsWith('//')) return null;
 
       line = line.replace(/^[",'\s]+|[",'\s]+$/g, '');
 
-      let type = 'youtube';
+      let type = defaultNumType || 'roblox-game-visits';
       let query = line;
 
-      if (line.includes('youtube.com/channel/')) {
+      // Prefix detection (e.g. visits:189707, players:189707, group:12345, yt:UC...)
+      if (/^visits?:/i.test(line)) {
+        type = 'roblox-game-visits';
+        query = line.replace(/^visits?:/i, '').trim();
+      } else if (/^(players?|playing):/i.test(line)) {
+        type = 'roblox-game-players';
+        query = line.replace(/^(players?|playing):/i, '').trim();
+      } else if (/^groups?:/i.test(line)) {
+        type = 'roblox';
+        query = line.replace(/^groups?:/i, '').trim();
+      } else if (/^(yt|youtube):/i.test(line)) {
+        type = 'youtube';
+        query = line.replace(/^(yt|youtube):/i, '').trim();
+      }
+      // URL parsing
+      else if (line.includes('youtube.com/channel/')) {
         type = 'youtube';
         const match = line.match(/channel\/([a-zA-Z0-9_\-]+)/);
         if (match) query = match[1];
@@ -972,7 +983,7 @@
         type = 'youtube';
         query = line;
       } else if (line.includes('roblox.com/games/')) {
-        type = 'roblox-game-visits';
+        type = defaultNumType || 'roblox-game-visits';
         const match = line.match(/roblox\.com\/games\/(\d+)/);
         if (match) query = match[1];
       } else if (line.includes('roblox.com/groups/')) {
@@ -991,11 +1002,12 @@
         type = 'instagram';
         const match = line.match(/instagram\.com\/([a-zA-Z0-9_\.]+)/);
         if (match) query = match[1];
-      } else if (/^\d{5,}$/.test(line)) {
-        type = 'roblox-game-visits';
+      } else if (/^\d{4,}$/.test(line)) {
+        type = defaultNumType || 'roblox-game-visits';
         query = line;
       }
 
+      query = query.replace(/\s+/g, '');
       return { type, query };
     }
 
@@ -1023,6 +1035,7 @@
 
     const bulkModal = document.getElementById('bulk-modal');
     const bulkText = document.getElementById('bulk-paste-text');
+    const bulkImportSelect = document.getElementById('bulk-import-type');
     const fileUploader = document.getElementById('file-uploader');
 
     refreshSlider.addEventListener('input', () => {
@@ -1077,7 +1090,7 @@
       modal.classList.add('open');
     }
 
-    function addRow(type = 'youtube', query = '') {
+    function addRow(type = 'roblox-game-visits', query = '') {
       const row = document.createElement('div');
       row.className = 'target-input-row';
       row.innerHTML = `
@@ -1101,7 +1114,7 @@
 
     document.getElementById('btn-open-settings').addEventListener('click', openModal);
     document.getElementById('btn-close-modal').addEventListener('click', () => modal.classList.remove('open'));
-    document.getElementById('btn-add-row').addEventListener('click', () => addRow('youtube', ''));
+    document.getElementById('btn-add-row').addEventListener('click', () => addRow(defaultImportType, ''));
 
     document.getElementById('btn-clear-all').addEventListener('click', () => {
       inputList.innerHTML = '';
@@ -1109,7 +1122,7 @@
       document.getElementById('tracker-count-badge').textContent = 'Tracked Entities (0)';
     });
 
-    // ── Notepad File Upload (Fast Large Array Parser) ──
+    // ── Notepad File Upload ──
     document.getElementById('btn-upload-file').addEventListener('click', () => {
       fileUploader.value = '';
       fileUploader.click();
@@ -1122,7 +1135,7 @@
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target.result;
-        importRawLines(text);
+        importRawLines(text, bulkImportSelect.value);
       };
       reader.readAsText(file);
     });
@@ -1130,26 +1143,28 @@
     // ── Bulk Paste Modal ──
     document.getElementById('btn-open-bulk').addEventListener('click', () => {
       bulkText.value = trackers.map(t => t.query).join('\n');
+      bulkImportSelect.value = defaultImportType;
       bulkModal.classList.add('open');
     });
     document.getElementById('btn-close-bulk').addEventListener('click', () => bulkModal.classList.remove('open'));
     document.getElementById('btn-cancel-bulk').addEventListener('click', () => bulkModal.classList.remove('open'));
 
     document.getElementById('btn-apply-bulk').addEventListener('click', () => {
+      defaultImportType = bulkImportSelect.value;
       const text = bulkText.value;
-      importRawLines(text);
+      importRawLines(text, defaultImportType);
       bulkModal.classList.remove('open');
     });
 
-    function importRawLines(text) {
+    function importRawLines(text, chosenType = defaultImportType) {
       const lines = text.split(/\r?\n/);
       const newItems = [];
       const seen = new Set();
 
       lines.forEach(l => {
-        const item = parseLineToTracker(l);
-        if (item && item.query && !seen.has(item.query)) {
-          seen.add(item.query);
+        const item = parseLineToTracker(l, chosenType);
+        if (item && item.query && !seen.has(item.type + ':' + item.query)) {
+          seen.add(item.type + ':' + item.query);
           const existing = trackers.find(t => t.type === item.type && t.query === item.query);
           newItems.push(existing || {
             id: nextId++,
@@ -1192,8 +1207,9 @@
           const type = r.querySelector('.m-type').value;
           const query = r.querySelector('.m-query').value.trim().replace(/\s+/g, '');
           if (query) {
-            editedQueries.add(query);
-            if (!trackers.some(t => t.query === query)) {
+            editedQueries.add(type + ':' + query);
+            const existing = trackers.find(t => t.type === type && t.query === query);
+            if (!existing) {
               trackers.push({
                 id: nextId++,
                 type,
@@ -1254,7 +1270,8 @@
           isDarkMode,
           maxVisibleBars,
           autoSort,
-          pollIntervalSec
+          pollIntervalSec,
+          defaultImportType
         };
         localStorage.setItem('gain_graph_dynamic_v2', JSON.stringify(data));
       } catch (e) {}
@@ -1289,6 +1306,7 @@
             if (d.maxVisibleBars) maxVisibleBars = d.maxVisibleBars;
             if (d.autoSort !== undefined) autoSort = d.autoSort;
             if (d.pollIntervalSec) pollIntervalSec = d.pollIntervalSec;
+            if (d.defaultImportType) defaultImportType = d.defaultImportType;
             return;
           }
         }
