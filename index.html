@@ -647,7 +647,7 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       API FETCHER
+       API FETCHER (WITH EXACT SCTOOLS & MIXERNO SUPPORT)
     ════════════════════════════════════════════════════════ */
     async function fetchSingleTarget(type, query) {
       if (!query) return null;
@@ -681,42 +681,72 @@
           };
         }
 
-        if (type === 'youtube') {
-          const res = await fetch(`https://mixerno.space/api/youtube-channel-counter/user/${q}`);
-          if (res.ok) {
-            const d = await res.json();
-            if (d && d.counts && d.counts[0]) {
-              return {
-                name: d?.user?.[0]?.count || `YT ${q}`,
-                count: d?.counts?.[0]?.count || 0,
-                pfp: d?.user?.[1]?.count || ''
-              };
+        if (type === 'youtube-sctools') {
+          // Exact SCTools API
+          try {
+            const res = await fetch(`https://ests.sctools.org/api/get/${q}`);
+            if (res.ok) {
+              const d = await res.json();
+              if (d && d.info && d.stats) {
+                return {
+                  name: d.info.name || `YT ${q}`,
+                  count: d.stats.estCount || d.stats.apiCount || 0,
+                  pfp: d.info.avatar || ''
+                };
+              }
             }
-          }
-          return {
-            name: `${q}`,
-            count: 0,
-            pfp: '',
-            isDead: true
-          };
+          } catch (e) {}
+
+          // Fallback to Mixerno if SCTools fails
+          try {
+            const res2 = await fetch(`https://mixerno.space/api/youtube-channel-counter/user/${q}`);
+            if (res2.ok) {
+              const d2 = await res2.json();
+              if (d2 && d2.counts && d2.counts[0]) {
+                return {
+                  name: d2?.user?.[0]?.count || `YT ${q}`,
+                  count: d2?.counts?.[0]?.count || 0,
+                  pfp: d2?.user?.[1]?.count || ''
+                };
+              }
+            }
+          } catch (e) {}
+
+          return { name: `${q}`, count: 0, pfp: '', isDead: true };
         }
 
-        if (type === 'youtube-sctools') {
-          const res = await fetch(`https://api.subscribercounter.nl/api/youtube-view-counter/${q}/data`);
-          if (res.ok) {
-            const d = await res.json();
-            return {
-              name: d?.channelName || `YT ${q}`,
-              count: d?.subCount || 0,
-              pfp: d?.channelAvatar || ''
-            };
-          }
-          return {
-            name: `${q}`,
-            count: 0,
-            pfp: '',
-            isDead: true
-          };
+        if (type === 'youtube') {
+          // Primary: Mixerno
+          try {
+            const res = await fetch(`https://mixerno.space/api/youtube-channel-counter/user/${q}`);
+            if (res.ok) {
+              const d = await res.json();
+              if (d && d.counts && d.counts[0]) {
+                return {
+                  name: d?.user?.[0]?.count || `YT ${q}`,
+                  count: d?.counts?.[0]?.count || 0,
+                  pfp: d?.user?.[1]?.count || ''
+                };
+              }
+            }
+          } catch (e) {}
+
+          // Secondary Fallback: SCTools API
+          try {
+            const res2 = await fetch(`https://ests.sctools.org/api/get/${q}`);
+            if (res2.ok) {
+              const d2 = await res2.json();
+              if (d2 && d2.info && d2.stats) {
+                return {
+                  name: d2.info.name || `YT ${q}`,
+                  count: d2.stats.estCount || d2.stats.apiCount || 0,
+                  pfp: d2.info.avatar || ''
+                };
+              }
+            }
+          } catch (e) {}
+
+          return { name: `${q}`, count: 0, pfp: '', isDead: true };
         }
 
         if (type === 'tiktok' || type === 'twitter' || type === 'instagram') {
