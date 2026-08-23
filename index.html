@@ -590,6 +590,12 @@
       return PALETTE[Math.abs(hash) % PALETTE.length];
     }
 
+    function getDefaultAvatar(name = '', color = '#3b82f6') {
+      const initial = (name ? name.trim().charAt(0).toUpperCase() : '?');
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><rect width="120" height="120" rx="60" fill="${color}"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="52" fill="#ffffff">${initial}</text></svg>`;
+      return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    }
+
     // Round human steps for moving X-axis ruler
     const NICE_STEPS = [
       1, 2, 5, 10, 20, 25, 50, 100, 250, 500,
@@ -904,7 +910,7 @@
       let items = trackers.map(t => ({
         id: t.id,
         name: t.name || t.query,
-        pfp: t.pfp || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%2394a3b8'/%3E%3C/svg%3E",
+        pfp: t.pfp || getDefaultAvatar(t.name || t.query, t.color || '#3b82f6'),
         color: t.color || '#3b82f6',
         displayVal: t.displayGain || 0,
         targetVal: t.targetGain || 0,
@@ -969,10 +975,11 @@
         const ratio = Math.max(0, Math.min(1, item.displayVal / visibleMax));
         const widthPct = (ratio * 100).toFixed(2);
         const isShort = ratio < 0.18;
+        const fallbackAvatar = getDefaultAvatar(item.name, item.color);
 
         row.innerHTML = `
           <div class="avatar-wrap">
-            <img class="avatar-img" src="${item.pfp}" alt="pfp" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'100\\' height=\\'100\\' viewBox=\\'0 0 24 24\\'%3E%3Crect width=\\'24\\' height=\\'24\\' fill=\\'%2394a3b8\\'/%3E%3C/svg%3E';" />
+            <img class="avatar-img" src="${item.pfp}" alt="pfp" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${fallbackAvatar}';" />
           </div>
           <div class="bar-track">
             <div class="bar-fill" style="width: ${widthPct}%; background-color: ${item.color};">
